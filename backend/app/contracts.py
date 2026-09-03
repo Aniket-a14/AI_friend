@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from enum import Enum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -54,6 +54,63 @@ class Topics(str, Enum):
     # no such justification, and "who is connected" is state as much as
     # state.broadcast's affect snapshot is.
     SESSION_PRESENCE = "state.presence"
+
+
+# 1E (§14 MODIFY / §2 Infrastructure): explicit delivery semantics per
+# subject, so "audio is lossy, cognition is durable" is a declared fact
+# rather than something inferred from which stream tier a subject's pattern
+# happens to fall into, or which client library a process uses to consume
+# it -- HUMANOID_ARCHITECTURE_RESEARCH.md §2 names both of those as exactly
+# the wrong place to infer this from.
+#
+# Default derivation: every subject under the AI_AUDIO stream's `audio.>`
+# pattern (nats_streams.CORE_STREAMS) is memory-backed with a minutes-scale
+# retention (nats_streams.STREAM_POLICIES) -- an intentional, documented
+# trade-off -- so it defaults to "best_effort". Every other declared subject
+# sits on the file-backed, week-scale AI_MESSAGES stream, so it defaults to
+# "durable". Two subjects override that default, both for reasons already
+# established in check_subject_wiring.py's ALLOWLIST:
+#
+#   - AGENT_VOICE_MODULATION technically matches AI_MESSAGES' `agent.>`
+#     pattern, but its only real consumer is the frontend voice UI over a
+#     lossy WebRTC data channel, not durable cognition -- expressive
+#     control data, not something a restart should replay.
+#   - AMBIENT_NOISE_TELEMETRY matches no declared stream pattern at all (a
+#     known gap tracked there); its only consumer (voice-agent) reads it
+#     over core NATS as live telemetry, so it is classified by that actual
+#     behavior rather than left unclassified.
+#
+# `scripts/diagnostics/check_delivery_semantics.py` re-derives the
+# stream-tier default from `nats_streams.py` and fails if a subject here
+# disagrees with it without being one of the two named overrides above --
+# catching drift (a subject moved between streams, or a new one added here
+# without its tier being reasoned about) going forward.
+TOPIC_DELIVERY: dict[Topics, Literal["durable", "best_effort"]] = {
+    Topics.CHAT_INPUT: "durable",
+    Topics.CHAT_OUTPUT: "durable",
+    Topics.VISION_CONTROL: "durable",
+    Topics.VISION_FRAMES: "durable",
+    Topics.VISION_DESCRIPTION: "durable",
+    Topics.VISION_FACIAL_REFLEX: "durable",
+    Topics.AUDIO_PERCEPTION: "best_effort",
+    Topics.AUDIO_STOP: "best_effort",
+    Topics.AUDIO_RESUME: "best_effort",
+    Topics.AUDIO_INBOUND: "best_effort",
+    Topics.AUDIO_STREAM: "best_effort",
+    Topics.VOICE_WARM: "durable",
+    Topics.VOICE_SEGMENTATION_FEEDBACK: "durable",
+    Topics.SYSTEM_TICK: "durable",
+    Topics.MEMORY_SURFACED: "durable",
+    Topics.STATE_UPDATE: "durable",
+    Topics.STATE_SUBCONSCIOUS: "durable",
+    Topics.USER_VOICE_PROPERTIES: "durable",
+    Topics.AGENT_VOICE_MODULATION: "best_effort",  # override: frontend-consumed, see above
+    Topics.AUDIO_PLAYBACK_VISEMES: "best_effort",
+    Topics.AUDIO_PLAYBACK_PROGRESS: "best_effort",
+    Topics.AUDIO_PLAYBACK_BACKLOG: "best_effort",
+    Topics.AMBIENT_NOISE_TELEMETRY: "best_effort",  # override: no declared stream, see above
+    Topics.SESSION_PRESENCE: "durable",
+}
 
 
 # ─── chat.input ──────────────────────────────────────────────
