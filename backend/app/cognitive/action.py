@@ -686,6 +686,33 @@ class ActionService:
         return f"\n{heading}:\n{_wrap_retrieved(visual)}"
 
     @staticmethod
+    def _build_realization_contract(plan: ActionPlan, emotion: str) -> str:
+        """Consolidate goal/emotion plus, when stage 6 attached one,
+        `plan.behavior_decision`'s relational stance/urgency/claim boundaries
+        into the single "Current Context" block -- one assembled place
+        instead of the goal line and any future addition each being bolted
+        on independently. Falls back to exactly today's two-line block when
+        no `behavior_decision` is present (the eval harness's action-path
+        plans, and any other plan built outside decision.py's BT, don't set
+        one)."""
+        lines = [f"- Goal: {plan.goal}", f"- Current Emotion: {emotion}"]
+        decision = plan.behavior_decision
+        if decision is not None:
+            intent = decision.intent
+            lines.append(f"- Relational stance: {intent.relational_stance}")
+            lines.append(f"- Urgency: {intent.urgency:.2f}")
+            if decision.allowed_claims:
+                lines.append(
+                    f"- You may claim: {', '.join(decision.allowed_claims)}"
+                )
+            if decision.forbidden_claims:
+                lines.append(
+                    "- You must NOT claim or imply: "
+                    + ", ".join(decision.forbidden_claims)
+                )
+        return "\n".join(lines)
+
+    @staticmethod
     def _build_tom_context(user_tom) -> str:
         """Render the Theory-of-Mind block describing the inferred user state."""
         if not user_tom:
@@ -1245,7 +1272,8 @@ class ActionService:
         # answer. The more abstract, lower-cost-to-lose context (goal, emotion,
         # Theory-of-Mind) goes earlier. Within the history block itself, memories
         # are already edge-loaded by reorder_for_long_context().
-        user_prompt = f"Current Context:\n- Goal: {plan.goal}\n- Current Emotion: {emotion}\n{tom_context}{wondering}{visual_context}{shared_history}\n\nUser: {msg}\nAssistant:"
+        realization_contract = self._build_realization_contract(plan, emotion)
+        user_prompt = f"Current Context:\n{realization_contract}\n{tom_context}{wondering}{visual_context}{shared_history}\n\nUser: {msg}\nAssistant:"
 
         valence = plan.payload.get("valence", 0.0)
         arousal = plan.payload.get("arousal", 0.5)

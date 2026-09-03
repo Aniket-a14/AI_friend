@@ -15,6 +15,7 @@ from typing import Any
 
 from ..config import Config
 from ..state.adaptive_weights_store import AdaptiveWeightsStore
+from .behavior_contracts import BehaviorDecision, CommunicativeIntent
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
 from .json_extract import extract_first_json_value
 from .perception import CognitiveEvent
@@ -33,6 +34,61 @@ class ActionPlan:
     payload: dict[str, Any]
     goal: str
     priority: int = 1
+    # 1B: typed sibling of goal/payload -- what this turn is trying to do and
+    # what it may/may not claim, before persona/policy.py's precheck
+    # (pipeline.py stage 7) and action.py's realization see it. Defaulted so
+    # every existing keyword/short-positional ActionPlan(...) call keeps
+    # working unchanged.
+    behavior_decision: BehaviorDecision | None = None
+
+
+# Ordered coarsest -> warmest; _bucket_relational_stance clamps into this.
+_RELATIONAL_STANCES: tuple[str, ...] = ("distant", "guarded", "neutral", "warm", "close")
+
+# Urgency at/above this maps a turn's interruption_policy to "reflex" --
+# naming, for conversational turns, the same class of "high-arousal signal
+# competes for the workspace immediately" judgment
+# `is_facial_reflex_interruption_worthy` already makes for vision's `startle`
+# reflex, rather than reintroducing a second threshold with different logic.
+_REFLEX_URGENCY_THRESHOLD = 0.75
+
+
+def _bucket_relational_stance(trust: float, attachment: float, mood: float) -> str:
+    """Clamp+bucket trust/attachment/mood into a named stance -- the same
+    clamp-then-map shape `persona/compiler.py::_infer_temperament` uses for
+    turning continuous dimension scores into bounded fields, applied here to
+    pick one of `_RELATIONAL_STANCES` instead of a numeric field."""
+    trust = max(0.0, min(1.0, trust))
+    attachment = max(0.0, min(1.0, attachment))
+    mood_unit = max(0.0, min(1.0, (mood + 1.0) / 2.0))
+    score = (trust + attachment + mood_unit) / 3.0
+    index = min(int(score * len(_RELATIONAL_STANCES)), len(_RELATIONAL_STANCES) - 1)
+    return _RELATIONAL_STANCES[index]
+
+
+def _build_communicative_intent(
+    event: CognitiveEvent, blackboard: dict[str, Any]
+) -> CommunicativeIntent:
+    """Stage 6: derive what this turn is trying to do from the event and the
+    state snapshot already on the blackboard -- no new state reads."""
+    state = blackboard.get("state") or {}
+    metadata = event.metadata or {}
+    tom = metadata.get("tom_inferences") or {}
+    urgency = max(0.0, min(1.0, float(tom.get("inferred_arousal", 0.5))))
+    stance = _bucket_relational_stance(
+        trust=float(state.get("trust", 0.5)),
+        attachment=float(state.get("attachment", 0.1)),
+        mood=float(state.get("mood", 0.0)),
+    )
+    return CommunicativeIntent(
+        act=event.intent or "CHAT",
+        goal=metadata.get("suggested_goal", "ENGAGE"),
+        urgency=urgency,
+        relational_stance=stance,
+        interruption_policy=(
+            "reflex" if urgency >= _REFLEX_URGENCY_THRESHOLD else "deliberative"
+        ),
+    )
 
 
 class DecisionService:
@@ -537,6 +593,7 @@ class DecisionService:
     async def _plan_social_response(self, blackboard: dict[str, Any]) -> bool:
         event = blackboard["event"]
         goal = event.metadata.get("suggested_goal", "ENGAGE")
+        intent = _build_communicative_intent(event, blackboard)
 
         blackboard["plan"] = ActionPlan(
             action_type="RESPOND_CHAT",
@@ -548,15 +605,30 @@ class DecisionService:
                 "surfaced_memories": event.metadata.get("surfaced_memories", []),
             },
             priority=1,
+            behavior_decision=BehaviorDecision(intent=intent),
         )
         return True
 
     async def _plan_reflection(self, blackboard: dict[str, Any]) -> bool:
-        blackboard["plan"] = ActionPlan("BACKGROUND_CONSOLIDATION", {}, "REFLECT", 0)
+        event = blackboard["event"]
+        intent = _build_communicative_intent(event, blackboard)
+        blackboard["plan"] = ActionPlan(
+            "BACKGROUND_CONSOLIDATION",
+            {},
+            "REFLECT",
+            0,
+            behavior_decision=BehaviorDecision(intent=intent),
+        )
         return True
 
     async def _plan_storage(self, blackboard: dict[str, Any]) -> bool:
+        event = blackboard["event"]
+        intent = _build_communicative_intent(event, blackboard)
         blackboard["plan"] = ActionPlan(
-            "STORE_MEMORY", {"content": blackboard["event"].raw_content}, "RECALL", 2
+            "STORE_MEMORY",
+            {"content": event.raw_content},
+            "RECALL",
+            2,
+            behavior_decision=BehaviorDecision(intent=intent),
         )
         return True

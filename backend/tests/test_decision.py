@@ -121,3 +121,108 @@ async def test_intent_classification_ignores_a_second_json_block_in_the_response
 
     assert event.intent == "COMMAND"
     assert event.metadata["suggested_goal"] == "TASK"
+
+
+# --------------------------------------------------------------------------
+# Phase 1B: CommunicativeIntent / BehaviorDecision attached to every plan
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_plan_carries_a_behavior_decision(decision_service, mock_llm_service):
+    mock_llm_service.generate.return_value = '{"intent": "CHAT", "goal": "TEASE"}'
+
+    event = CognitiveEvent(
+        event_id="6",
+        event_type="USER_MESSAGE",
+        raw_content="You are funny",
+        metadata={},
+    )
+    state = {"emotion": "happy", "mood": 0.5, "trust": 0.5, "attachment": 0.1}
+
+    plan = await decision_service.decide(event, state)
+
+    assert plan.behavior_decision is not None
+    assert plan.behavior_decision.intent.goal == "TEASE"
+    assert plan.behavior_decision.intent.act == "CHAT"
+
+
+@pytest.mark.asyncio
+async def test_reflect_plan_carries_a_behavior_decision(
+    decision_service, mock_llm_service
+):
+    event = CognitiveEvent(
+        event_id="7", event_type="SYSTEM_TICK", raw_content="Tick", metadata={}
+    )
+    event.intent = "REFLECT"
+    state = {"emotion": "neutral", "mood": 0.0}
+
+    plan = await decision_service.decide(event, state)
+
+    assert plan.behavior_decision is not None
+    assert plan.behavior_decision.intent.act == "REFLECT"
+
+
+def test_relational_stance_rises_with_trust_attachment_and_mood():
+    from app.cognitive.decision import _bucket_relational_stance
+
+    cold = _bucket_relational_stance(trust=0.0, attachment=0.0, mood=-1.0)
+    warm = _bucket_relational_stance(trust=1.0, attachment=1.0, mood=1.0)
+    assert cold == "distant"
+    assert warm == "close"
+
+
+def test_relational_stance_bucketing_is_monotonic_in_trust():
+    """A regression guard against a future edit that makes the bucket
+    function non-monotonic (e.g. an off-by-one in the index clamp) --
+    higher trust must never produce a colder-or-equal bucket ranked lower."""
+    from app.cognitive.decision import _RELATIONAL_STANCES, _bucket_relational_stance
+
+    stances = [
+        _bucket_relational_stance(trust=t / 10, attachment=0.5, mood=0.0)
+        for t in range(11)
+    ]
+    indices = [_RELATIONAL_STANCES.index(s) for s in stances]
+    assert indices == sorted(indices)
+
+
+def test_build_communicative_intent_reads_tom_urgency_and_state():
+    from app.cognitive.decision import _build_communicative_intent
+
+    event = CognitiveEvent(
+        event_id="8",
+        event_type="USER_MESSAGE",
+        raw_content="help now",
+        metadata={
+            "suggested_goal": "PROTECT",
+            "tom_inferences": {"inferred_arousal": 0.9},
+        },
+    )
+    event.intent = "CHAT"
+    blackboard = {
+        "event": event,
+        "state": {"trust": 0.5, "attachment": 0.1, "mood": 0.0},
+    }
+
+    intent = _build_communicative_intent(event, blackboard)
+
+    assert intent.goal == "PROTECT"
+    assert intent.urgency == pytest.approx(0.9)
+    assert intent.interruption_policy == "reflex"
+
+
+def test_build_communicative_intent_defaults_to_deliberative_below_threshold():
+    from app.cognitive.decision import _build_communicative_intent
+
+    event = CognitiveEvent(
+        event_id="9",
+        event_type="USER_MESSAGE",
+        raw_content="hey",
+        metadata={"tom_inferences": {"inferred_arousal": 0.3}},
+    )
+    event.intent = "CHAT"
+    blackboard = {"event": event, "state": {}}
+
+    intent = _build_communicative_intent(event, blackboard)
+
+    assert intent.interruption_policy == "deliberative"

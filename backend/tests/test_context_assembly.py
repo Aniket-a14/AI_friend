@@ -551,6 +551,66 @@ class TestRetrievedContentIsDelimited:
             "[RETRIEVED-CONTENT]The user is smiling.[/RETRIEVED-CONTENT]"
         )
 
+    def test_realization_contract_falls_back_to_two_lines_without_a_decision(self):
+        """No behavior_decision (eval-harness action-path plans, or any
+        other plan built outside decision.py's BT) -> exactly today's
+        pre-1B two-line block, unchanged."""
+        from app.cognitive.decision import ActionPlan
+
+        plan = ActionPlan(action_type="RESPOND_CHAT", goal="ENGAGE", payload={})
+        block = ActionService._build_realization_contract(plan, "happy")
+        assert block == "- Goal: ENGAGE\n- Current Emotion: happy"
+
+    def test_realization_contract_folds_in_behavior_decision_fields(self):
+        from app.cognitive.behavior_contracts import (
+            BehaviorDecision,
+            CommunicativeIntent,
+        )
+        from app.cognitive.decision import ActionPlan
+
+        decision = BehaviorDecision(
+            intent=CommunicativeIntent(
+                act="CHAT",
+                goal="COMFORT",
+                urgency=0.8,
+                relational_stance="warm",
+            ),
+            allowed_claims=["I remember you mentioned a hard day"],
+            forbidden_claims=["Will never share user data"],
+        )
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="COMFORT",
+            payload={},
+            behavior_decision=decision,
+        )
+        block = ActionService._build_realization_contract(plan, "concerned")
+        assert "- Goal: COMFORT" in block
+        assert "- Relational stance: warm" in block
+        assert "- Urgency: 0.80" in block
+        assert "You may claim: I remember you mentioned a hard day" in block
+        assert "You must NOT claim or imply: Will never share user data" in block
+
+    def test_realization_contract_omits_empty_claim_lists(self):
+        from app.cognitive.behavior_contracts import (
+            BehaviorDecision,
+            CommunicativeIntent,
+        )
+        from app.cognitive.decision import ActionPlan
+
+        decision = BehaviorDecision(
+            intent=CommunicativeIntent(act="CHAT", goal="ENGAGE")
+        )
+        plan = ActionPlan(
+            action_type="RESPOND_CHAT",
+            goal="ENGAGE",
+            payload={},
+            behavior_decision=decision,
+        )
+        block = ActionService._build_realization_contract(plan, "neutral")
+        assert "may claim" not in block
+        assert "must NOT claim" not in block
+
     def test_the_guideline_tells_the_model_the_markers_are_data(self):
         from app.cognitive.action import _CHAT_GUIDELINE
 
