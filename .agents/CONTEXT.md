@@ -15933,3 +15933,63 @@ canonical Phase 1B). Added the opt-in `LLM_TYPED_REALIZATION_ENABLED` flag, boun
 parser, deterministic raw-text fallback, and focused stream tests. Claude owns 1A/1B/1D/1E;
 the earlier `cf83c9b` full-slice commit is overlap history and is not this branch's merge unit.
 No home-GPU run was performed.
+
+## 2026-09-03 -- Phase 2A/2B/2D blockers closed: turn-scoped audio publisher, §18 Experiment 3
+
+Codex's reciprocal review of `f368eb9` found two real blockers before merge, both closed here.
+
+**1. `turn_id` publisher bug.** `_resolve_turn_conflict` (`pipeline.py`) stamped `audio.stop`/
+`audio.resume` from `event_metadata.get("turn_id")` directly. `SessionState.start_turn` always
+populates a real `turn_id` (generating a uuid4 when nothing upstream supplies one), but
+`event_metadata` itself is rarely stamped by anything upstream -- so the common case published
+`turn_id: None` on both signals, silently defeating the turn-scoping Phase 2D was built to add.
+Fixed by reading `session_state.turn_id` (falling back to `event_metadata.get("turn_id")` only for
+the pre-2B caller shape where `session_state` is `None`). `test_audio_resume_turn_scope.py`'s
+`test_rejected_interruption_with_no_turn_id_stamps_none` -- which had asserted the buggy `None`
+output as correct -- is now `..._stamps_generated_session_turn_id`, pinning `uuid.uuid4` to assert
+the real generated id is what's published. Mutation-tested: reverting the fix to the old
+`event_metadata.get("turn_id")` read makes that one test fail, nothing else.
+
+**2. §18 Experiment 3 missing.** `backend/tests/integration/test_state_conflict_experiment.py` is
+new. `test_organism_state_revision.py` (2A) already covers the CAS guard as a pure function against
+hand-built dicts; this file exercises the same guard over the actual mesh transport -- two
+`StateService` instances (`writer_id="brain_agent"` / `"subconscious_agent"`), each behind a real
+`BaseAgent`, wired to a shared mock JetStream connection, publishing/subscribing `state.broadcast`
+through the real `orjson`/`json` (de)serialization path (`harness.inject` rather than
+`BaseAgent.publish` -- the mock `MockJetStream.publish` doesn't accept the `timeout=` kwarg the real
+client call passes, so `agent.publish` against this mock fails closed and is swallowed by
+`publish`'s own broad except; `harness.inject` calls the same underlying `js.publish` without that
+kwarg, matching every other mesh integration test in the suite). Four scenarios: (1) a baseline
+broadcast propagating over the real wire path with matching revision/writer_id; (2) concurrent
+first writes from both sides colliding on revision=1 (revision is a per-writer local counter, not a
+shared logical clock -- this is not a bug, and the test asserts the "Equal-revision write conflict"
+warning fires rather than asserting a specific winner); (3) a reordered stale redelivery correctly
+rejected after a newer revision has already landed; (4) a restart-order variation -- a writer that
+crashes and restarts begins its revision history at 0 again (deliberately not persisted, per
+`agent_state.py:131-135`), so a peer that already saw its pre-restart high-water mark rejects its
+first fresher post-restart broadcasts as stale. (4) documents an accepted, known hazard rather than
+fixing it -- there is no cross-process restart-epoch detection in this phase, consistent with 2A's
+stated scope. Mutation-tested: disabling the CAS guard's stale-rejection branch fails scenarios (3)
+and (4), passes (1)/(2) (they don't depend on rejection).
+
+**VERIFIED.** Full backend suite: 1779/1779 (two independent full runs after the fix, both clean;
+an earlier run showed 3 failures including one in an untouched file, `test_organism_state_revision.py`,
+that also disappeared on rerun with no code change -- a pre-existing flake, not a regression from
+this diff, confirmed by also rerunning the full suite with the new integration file excluded, still
+clean). `ruff check .` clean.
+
+**Reviewed Codex's `0ebb0c3`** (2C memory provenance + 2E strict storage) against
+`PLAN_FOR_CODEX.md` §2C/§2E. Matches the stated design: Postgres/SQLite schema additions
+(`speaker`/`record_type`/`valid_from`/`valid_until`/`contradicts_id`), idempotent SQLite migration,
+`find_contradiction` entity-linking via `contradicts_id` (links only, never overwrites), archive/
+promotion round-trip preserving provenance, `ORGANISM_MODE_STRICT_STORAGE` defaulting `False` and
+raising before the SQLite fallback path when `True`. Two findings reported back, not blocking but
+real: (a) `_insert_memory_row`'s new compatibility-variant retry loop can re-enter the same fallback
+cycle indefinitely if a missing-column error is ever raised by the fully-stripped base-column insert
+itself (neither provenance nor Eriksonian columns in the error message routes back to the same
+"ambiguous" branch that already failed) -- narrow, requires a base-column schema break to trigger,
+but converts what used to be an immediate raise into a silent hang instead of a fast loud failure;
+(b) `ConversationHistoryStore.initialize()` sets `self.used_fallback_storage = True` before the
+strict-mode check that raises instead of actually falling back, so the flag reads "used fallback
+storage" on the exact path that refused to -- `test_phase2_strict_storage.py` asserts this as
+correct rather than catching it. Posted to `personal/HANDOFF.md`.
