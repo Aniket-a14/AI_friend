@@ -16408,3 +16408,36 @@ Verification:
 or NATS integration was run in this peer-review fix round. Python threads
 cannot be force-stopped, so future actuator adapters should support cooperative
 cancellation after dispatcher timeout.
+### 2026-09-04 -- Orchestrator (Antigravity) -- Phase 05 Integrated, Benchmarked & Phase Gate PASSED
+
+- Merged `codex/phase-05` (Package A) and `claude/phase-05` (Package B) into `integration/phase-05` at commit `2a0e9a2` and benchmarked at `4903a6e`.
+- Package A delivered voice boundary, compilers, telemetry, and external action protocol in `backend/app/`:
+  - `SpeechIntent` (`backend/app/cognitive/speech_intent.py`) capturing complete Section 23 specification: `SpeechAffect`, `SpeechEpistemics`, `SpeechRelationship`, `SpeechDelivery`, `SpeechTimelineMarker` (PAUSE, EMPHASIS, VOCALIZATION), and `SpeechTurnPolicy`.
+  - Voice compilers (`backend/app/voice/compiler.py`): `ElevenLabsVoiceCompiler` (cloud styles, pauses, rate) and `GPTSoVITSVoiceCompiler` (local pitch, rate, SSML tags) conforming to `VoiceCompilerProtocol`.
+  - `IntentLossRecord` telemetry capturing 100% of unrenderable epistemics, relationship, and affect dimensions with explicit fidelity scores.
+  - Bidirectional legacy expression wire migration (`legacy_expression_to_speech_intent` and `speech_intent_to_legacy_modulation`) averaging steady-state frames (t_ms >= 150) to gracefully handle real Rust APRA fade-in envelopes (volume = 0.10) without `ValidationError`.
+  - High-level external action protocol (`backend/app/cognitive/external_action.py`): `ExternalActionIntent`, `ExternalActionDispatcher` with risk and reversibility gating (100% blocking unauthorized HIGH/CRITICAL and IRREVERSIBLE actions), execution timeout enforcement via `timeout_s`, and terminal `OutcomeRecord` integration explicitly tagging simulated executions.
+- Package B delivered foundation model roles, capability negotiation, and structured vision boundary in `backend/app/`:
+  - `ModelRole` taxonomy (`backend/app/llm/model_roles.py`): INTERPRETATION, CANDIDATE_GENERATION, PLANNING, EVALUATION, COMPRESSION, REALIZATION.
+  - `RoleExecutionRequest` and `RoleExecutionResult` with fail-closed default (`validated=False`), `validation_errors`, and `FallbackStrategy`.
+  - `ProviderCapabilityNegotiator`: capability negotiation across Scenarios A/B/C enforcing fail-closed ABSTAIN on unknown providers, adapting registered models via TEMPLATE_PROCEDURE / ROLE_DEGRADATION, and enforcing validation gate `ensure_committable()` so fallbacks cannot bypass identity/safety constraints.
+  - `StructuredVisionPercept` (`backend/app/cognitive/vision_percept.py`): track IDs, identity estimates, detected objects, gaze pose, facial observables (action units), scene deltas, spatial relations.
+  - Anti-emotion-fact invariant: expanded emotion word detection and dual-check across both `FacialObservable` and `scene_deltas` in `validate_vision_invariants()`, preventing emotional assertions from being treated as observation facts.
+  - Vision adapters (`backend/app/vision/adapters.py`): `VLMCaptionVisionAdapter` (sanitizes caption text into low-confidence scene deltas) and `SpatialTrackingVisionAdapter` (robust fail-closed coercion for non-list inputs and non-finite staleness), normalizing into `PerceptEnvelope`.
+- Full suite verification:
+  - **2,232 passed, 0 failures, 0 errors, 0 skipped** across the entire backend in 58.48s.
+  - Ruff: clean across the entire repository.
+  - Radon: 0 functions at rank D or higher (`radon cc app -s -n D` exits with code 0).
+  - ASCII purity: 100% pure 7-bit ASCII verified across all Phase 05 files.
+- Benchmark verification (all 6 benchmarks passed):
+  - **BM-LOC-P5-01** (Voice Compiler Throughput & Loss Telemetry): 1,000 iterations; mean = 3.448 us, p95 = 3.667 us, capture rate = 100.0% (threshold < 50.0 us, 100%) -> **PASS**.
+  - **BM-LOC-P5-02** (Vision Normalization & Invariant Check): 1,000 iterations; mean = 10.155 us, p95 = 11.333 us, corruption rate = 0.0% (threshold < 50.0 us, 0%) -> **PASS**.
+  - **BM-LOC-P5-03** (Model Role Capability Negotiation Latency): 1,000 checks; mean = 0.262 us, p95 = 0.292 us (threshold < 10.0 us) -> **PASS**.
+  - **BM-LOC-P5-04** (External Action Risk & Authorization Gating): 1,000 actions; mean = 0.137 us, unauthorized block rate = 100.0% (threshold < 10.0 us, 100%) -> **PASS**.
+  - **BM-GPU-P5-01** (Model Provider Swap TTFT Delta & Continuity on RTX 2060 Super `llama3.2:3b` vs `qwen2.5:3b`): 10 standardized prompts per model; Llama 3.2 3B mean TTFT = 32.10 ms, Qwen 2.5 3B mean TTFT = 29.22 ms; TTFT delta = **2.88 ms** (threshold <= 25.0 ms), authoritative state continuity = **100% INTACT** -> **PASS**.
+  - **BM-GPU-P5-02** (SpeechIntent Compilation & Isolation on RTX 2060 Super): live GPU turn generation via Ollama, compiled across both voice compilers; mean compilation latency = **0.085 ms** (threshold < 5.0 ms), provider tag leak into workspace = **0.0%** -> **PASS**.
+- Evaluated all 12 criteria in `ACCEPTANCE_CRITERIA.md`: 100% passed.
+- Issued formal Phase Gate verdict **`PASS`** in `orchestration/PHASE_05/PHASE_GATE.md`.
+- Empirical results documented in `orchestration/PHASE_05/BENCHMARK_RESULTS.md`.
+
+**NOT done:** Live hardware actuator integrations, real multi-channel microphone array beamforming, and Phase 06 (Optional advanced learning and planning) have not started.
