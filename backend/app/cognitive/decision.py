@@ -15,11 +15,13 @@ from typing import Any
 
 from ..config import Config
 from ..state.adaptive_weights_store import AdaptiveWeightsStore
+from .action_candidate import ActionCandidate, CandidateSelector
 from .behavior_contracts import BehaviorDecision, CommunicativeIntent
 from .bt import Action, Condition, NodeStatus, Selector, Sequence
 from .deterministic_responses import evaluate_deterministic_response
 from .intent_classifier import get_intent_classifier
 from .json_extract import extract_first_json_value
+from .memory_activation import MemoryActivation
 from .perception import CognitiveEvent
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,24 @@ _RELATIONAL_STANCES: tuple[str, ...] = ("distant", "guarded", "neutral", "warm",
 # `is_facial_reflex_interruption_worthy` already makes for vision's `startle`
 # reflex, rather than reintroducing a second threshold with different logic.
 _REFLEX_URGENCY_THRESHOLD = 0.75
+
+# Phase 02 Package B: a MemoryActivation at or above this relevance, whose
+# contradiction_state is not "NONE", is treated as active memory disputing
+# what the turn is about to assert -- reason enough to propose ASK (clarify)
+# as a candidate rather than only SPEAK.
+_HIGH_RELEVANCE_THRESHOLD = 0.75
+
+# Baseline scores for the two candidates decide() always generates. WAIT is
+# deliberately low -- it is the constraint-safe fallback, not a competitive
+# default -- and only wins when nothing else survives filter_constraints.
+_SPEAK_BASELINE_SCORE = 0.5
+_WAIT_FALLBACK_SCORE = 0.1
+# An ASK candidate raised by disputed active memory must outscore the SPEAK
+# baseline whenever relevance clears _HIGH_RELEVANCE_THRESHOLD; 0.6 plus a
+# relevance-scaled bonus guarantees that at the threshold (0.75 * 0.3 =
+# 0.225) it already exceeds 0.5, and it only grows with relevance.
+_ASK_BASE_SCORE = 0.6
+_ASK_RELEVANCE_BONUS = 0.3
 
 
 def _bucket_relational_stance(trust: float, attachment: float, mood: float) -> str:
@@ -133,6 +153,9 @@ class DecisionService:
         # `_score_goals_maut` updates a utility.
         self.agent_name = agent_name
         self._weights_store = weights_store or AdaptiveWeightsStore()
+        # Phase 02 Package B: constraint-first candidate filtering/scoring,
+        # only exercised when Config.PHASE_02_MEMORY_TRUTH is True.
+        self._candidate_selector = CandidateSelector()
 
         # Intent Persistence (§3.2)
         self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
@@ -236,9 +259,18 @@ class DecisionService:
         return True
 
     async def decide(
-        self, event: CognitiveEvent, state_snapshot: dict[str, Any]
+        self,
+        event: CognitiveEvent,
+        state_snapshot: dict[str, Any],
+        memory_activations: list[MemoryActivation] | None = None,
     ) -> ActionPlan:
-        """Main decision loop with MAUT scoring and intent persistence."""
+        """Main decision loop with MAUT scoring and intent persistence.
+
+        `memory_activations` (Phase 02 Package B) is optional and additive:
+        every caller that predates it keeps working unchanged, and its
+        contents only influence the plan when Config.PHASE_02_MEMORY_TRUTH
+        is True (see `_plan_social_response`).
+        """
         # 0. Deterministic short-circuit -- zero LLM calls, before classification.
         if event.event_type == "USER_MESSAGE":
             deterministic_plan = evaluate_deterministic_response(
@@ -278,6 +310,7 @@ class DecisionService:
             "event": event,
             "state": state_snapshot,
             "plan": None,
+            "memory_activations": memory_activations or [],
         }
         status = await self.root.tick(blackboard)
 
@@ -648,6 +681,13 @@ class DecisionService:
         event = blackboard["event"]
         goal = event.metadata.get("suggested_goal", "ENGAGE")
         intent = _build_communicative_intent(event, blackboard)
+        behavior_decision = BehaviorDecision(intent=intent)
+
+        if Config.PHASE_02_MEMORY_TRUTH:
+            memory_activations = blackboard.get("memory_activations") or []
+            behavior_decision = self._select_action_candidate(
+                behavior_decision, goal, memory_activations
+            )
 
         blackboard["plan"] = ActionPlan(
             action_type="RESPOND_CHAT",
@@ -659,9 +699,117 @@ class DecisionService:
                 "surfaced_memories": event.metadata.get("surfaced_memories", []),
             },
             priority=1,
-            behavior_decision=BehaviorDecision(intent=intent),
+            behavior_decision=behavior_decision,
         )
         return True
+
+    def _build_candidates(
+        self,
+        goal: str,
+        memory_activations: list[MemoryActivation],
+        forbidden_claims: list[str],
+    ) -> list[ActionCandidate]:
+        """Phase 02 Package B: the candidate set decide() evaluates for a
+        social-response turn. Always includes a SPEAK baseline and a WAIT
+        fallback (unconstrained, so filter_constraints can never empty the
+        set entirely); adds an ASK candidate when active memory disputes
+        what the turn would otherwise assert. `forbidden_claims` is accepted
+        for symmetry with filter_constraints and future candidate sources
+        that derive constraint_claims from it; today's builder does not
+        attach any, so it is currently unused here.
+        """
+        del forbidden_claims  # reserved for future constraint-aware candidates
+        candidates = [
+            ActionCandidate(
+                candidate_id="cand-speak-default",
+                kind="SPEAK",
+                source="policy",
+                target_goal_ids=[goal],
+                score=_SPEAK_BASELINE_SCORE,
+            ),
+            ActionCandidate(
+                candidate_id="cand-wait-fallback",
+                kind="WAIT",
+                source="reflex",
+                score=_WAIT_FALLBACK_SCORE,
+            ),
+        ]
+
+        disputed = [
+            activation
+            for activation in memory_activations
+            if activation.validity
+            and activation.contradiction_state != "NONE"
+            and activation.relevance_score >= _HIGH_RELEVANCE_THRESHOLD
+        ]
+        if disputed:
+            most_relevant = max(disputed, key=lambda a: a.relevance_score)
+            candidates.append(
+                ActionCandidate(
+                    candidate_id=f"cand-ask-{most_relevant.record_id}",
+                    kind="ASK",
+                    source="memory_activation",
+                    target_goal_ids=[goal],
+                    evidence_ids=[most_relevant.record_id],
+                    score=_ASK_BASE_SCORE
+                    + _ASK_RELEVANCE_BONUS * most_relevant.relevance_score,
+                )
+            )
+        return candidates
+
+    def _select_action_candidate(
+        self,
+        behavior_decision: BehaviorDecision,
+        goal: str,
+        memory_activations: list[MemoryActivation],
+    ) -> BehaviorDecision:
+        """Phase 02 Package B: constraint-first candidate generation and
+        selection for one social-response turn. Returns a copy of
+        `behavior_decision` carrying the winning candidate, the rejected
+        alternatives (constraint-violating and lower-scoring alike), and
+        whether any considered memory activation reported a retrieval
+        outage.
+        """
+        forbidden_claims = list(self._immutable_core().get("boundaries", []))
+        candidates = self._build_candidates(goal, memory_activations, forbidden_claims)
+
+        survivors = self._candidate_selector.filter_constraints(
+            candidates, forbidden_claims
+        )
+        survivor_ids = {candidate.candidate_id for candidate in survivors}
+        constraint_rejected = [
+            {
+                "candidate_id": candidate.candidate_id,
+                "kind": candidate.kind,
+                "source": candidate.source,
+                "reason": "constraint_violation",
+                "constraint_claims": candidate.constraint_claims,
+            }
+            for candidate in candidates
+            if candidate.candidate_id not in survivor_ids
+        ]
+
+        if not survivors:
+            # filter_constraints should never empty the set given the WAIT
+            # fallback always carries no constraint_claims -- this is a
+            # defensive floor, not an expected path.
+            survivors = [c for c in candidates if c.kind == "WAIT"] or candidates
+
+        winner, score_rejected = self._candidate_selector.score_and_select(
+            survivors, active_goals=[goal]
+        )
+
+        retrieval_degraded = any(
+            activation.outage_flag for activation in memory_activations
+        )
+
+        return behavior_decision.model_copy(
+            update={
+                "selected_candidate": winner.model_dump(),
+                "rejected_alternatives": constraint_rejected + score_rejected,
+                "retrieval_degraded": retrieval_degraded,
+            }
+        )
 
     async def _plan_reflection(self, blackboard: dict[str, Any]) -> bool:
         event = blackboard["event"]

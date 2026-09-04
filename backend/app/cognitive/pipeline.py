@@ -2,13 +2,15 @@ import asyncio
 import logging
 import math
 from collections.abc import AsyncGenerator
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, get_args, runtime_checkable
 
+from ..config import Config
 from ..contracts import StateUpdate
 from ..persona.policy import PersonaPolicy
 from ..state.session_state import SessionState, persist_session_state
 from .action_intent import ActionIntent, ActionKind, build_action_intent
 from .behavior_contracts import BehaviorDecision
+from .memory_activation import MemoryActivation
 from .percept import PerceptEnvelope
 
 logger = logging.getLogger(__name__)
@@ -461,8 +463,25 @@ class CognitivePipeline:
     _ACTION_KIND_BY_TYPE: dict[str, ActionKind] = {
         "BACKGROUND_CONSOLIDATION": "REFLECT",
     }
+    _VALID_ACTION_KINDS: frozenset[str] = frozenset(get_args(ActionKind))
 
     def _derive_action_kind(self, plan) -> ActionKind:
+        """Phase 02 Package B: when CandidateSelector picked a winner
+        (`Config.PHASE_02_MEMORY_TRUTH` True), Stage 6 commits *that*
+        candidate's kind instead of the old action_type heuristic below --
+        the whole point of generalized action selection is that the
+        committed ActionIntent reflects what was actually chosen, not a
+        fixed mapping from action_type. Falls back to the Phase 1 mapping
+        whenever no candidate was selected (flag off, or a non-social plan
+        such as BACKGROUND_CONSOLIDATION that never reaches candidate
+        selection)."""
+        behavior_decision = plan.behavior_decision
+        if isinstance(behavior_decision, BehaviorDecision):
+            selected = behavior_decision.selected_candidate
+            if selected:
+                candidate_kind = selected.get("kind")
+                if candidate_kind in self._VALID_ACTION_KINDS:
+                    return candidate_kind
         return self._ACTION_KIND_BY_TYPE.get(plan.action_type, "SPEAK")
 
     def _commit_action_intent(
@@ -511,6 +530,7 @@ class CognitivePipeline:
         surfaced_memories: list[dict[str, Any]] | None = None,
         percept: PerceptEnvelope | None = None,
         workspace: WorkspaceSnapshotLike | None = None,
+        memory_activations: list[MemoryActivation] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Executes the master cognitive loop.
@@ -523,6 +543,16 @@ class CognitivePipeline:
         caller, `CognitiveService.process_event`) keeps working unchanged,
         and Stage 6 still commits an `ActionIntent` against a `(0, 0)`
         fallback tuple rather than skipping the causal trace entirely.
+
+        `memory_activations` (Phase 02 Package B, Sections 8/11/22/39) is
+        likewise optional and additive. When `Config.PHASE_02_MEMORY_TRUTH`
+        is False (the default) it is accepted but not acted on, preserving
+        exact Phase 1 behavior for every existing caller. When True and any
+        activation carries `outage_flag=True`, this marks the turn's
+        decision metadata `retrieval_degraded=True` rather than letting a
+        retrieval failure look identical to a real absence of memories, and
+        threads the activations into `DecisionService.decide` so active
+        memory can shift which `ActionCandidate` Stage 6 commits.
         """
         import time
 
@@ -583,6 +613,13 @@ class CognitivePipeline:
         event.metadata["session_state"] = session_state
         if event_metadata.get("speculative"):
             event.metadata["speculative"] = True
+        # Phase 02 Package B: only written when the flag is on and there is
+        # something to report -- an untouched key when memory_activations is
+        # empty/None keeps this a strict no-op for every Phase 1 caller.
+        if Config.PHASE_02_MEMORY_TRUTH and memory_activations:
+            event.metadata["retrieval_degraded"] = any(
+                activation.outage_flag for activation in memory_activations
+            )
 
         # 4. Appraisal (§1 — OCC/Lazarus/EMA)
         t_start = time.perf_counter()
@@ -622,7 +659,9 @@ class CognitivePipeline:
             event.metadata["surfaced_memories"] = surfaced_memories
         event.metadata["appraisal"] = appraisal_vector.to_dict()
 
-        plan = await self.decision.decide(event, state_snapshot)
+        plan = await self.decision.decide(
+            event, state_snapshot, memory_activations=memory_activations
+        )
 
         if self.reappraisal:
             self.reappraisal.record_pre_response_state(state_snapshot)

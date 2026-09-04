@@ -284,7 +284,7 @@ async def test_pipeline_tom_integration():
     )
 
     # Mock decision to return custom ToM metadata
-    async def mock_decide(event, snapshot):
+    async def mock_decide(event, snapshot, memory_activations=None):
         event.metadata["tom_inferences"] = {
             "inferred_valence": 0.9,
             "inferred_arousal": 0.4,

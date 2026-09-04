@@ -27,7 +27,20 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-ActionKind = Literal["SPEAK", "ASK", "WAIT", "OBSERVE", "REFLECT", "INTERRUPT"]
+# Phase 02 Package B: widened to also accept the ActionCandidate kinds that
+# have no Phase 1 analogue (RETRIEVE, VERIFY, UPDATE_GOAL) -- a superset, so
+# every ActionIntent ever committed under Phase 1 remains a valid ActionKind.
+ActionKind = Literal[
+    "SPEAK",
+    "ASK",
+    "WAIT",
+    "OBSERVE",
+    "REFLECT",
+    "INTERRUPT",
+    "RETRIEVE",
+    "VERIFY",
+    "UPDATE_GOAL",
+]
 OutcomeStatus = Literal["COMPLETED", "TRUNCATED", "CANCELLED", "FAILED"]
 
 

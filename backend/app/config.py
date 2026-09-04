@@ -222,6 +222,14 @@ class AppSettings(BaseSettings):
     # Phase 1 experiment: ask the realization model for a bounded envelope.
     # False preserves the existing streaming text contract.
     LLM_TYPED_REALIZATION_ENABLED: bool = False
+    # Phase 02 Package B: gates ActionCandidate generation / CandidateSelector
+    # wiring in decision.py and pipeline.py. False (default during
+    # development) preserves exact Phase 1 behavior -- no candidates are
+    # generated, no rejected_alternatives are recorded, and Stage 6's
+    # ActionIntent.kind is derived the old way. Flip once Package A's
+    # temporal memory store (backend/app/state/temporal_store.py) is wired
+    # in and candidate-driven action selection has been verified end to end.
+    PHASE_02_MEMORY_TRUTH: bool = False
 
     # P1-1: the control tier's JetStream consumer settings (system.tick).
     # Both were previously implicit -- a 30s server-default ack_wait and
