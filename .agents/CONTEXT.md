@@ -16270,3 +16270,34 @@ Verification:
 
 **NOT done:** Package B integration, remote GPU validation, remote CI, and a
 full local NATS-enabled suite remain outside this scoped worktree fix round.
+
+### 2026-09-04 -- Orchestrator (Antigravity) -- Phase 03 Integrated, Benchmarked & Phase Gate PASSED
+
+- Merged `codex/phase-03` (Package A) and `claude/phase-03` (Package B) into `integration/phase-03` at commit `915f111`.
+- Package A delivered causal affect and global controls engine in `backend/app/cognitive/` and `state/`:
+  - Pure appraisal event reducer `appraise_event(event_metadata, active_goals, expectation) -> AppraisalRecord` with directional affect deltas and no belief mutations.
+  - Frozen `AppraisalRecord` with immutable `affect_delta` mapping proxy.
+  - Four bounded global engineering controls derived via `derive_global_controls`: `urgency_gain`, `exploration_budget`, `effort_budget`, `learning_gain` strictly clamped to `[0.0, 1.0]`.
+  - Bidirectional adapter between legacy endocrine hormones (cortisol, dopamine) and global controls (`endocrine_to_global_controls`, `global_controls_to_endocrine`).
+  - StateService integration with atomic affect application and control refreshes under `_state_lock`.
+- Package B delivered global control modulation and emotion regulation actions in `backend/app/cognitive/`:
+  - `CandidateSelector.score_and_select` modulated by urgency, exploration, and effort budgets without altering candidate generation.
+  - Inherent constraint-first enforcement inside `score_and_select` ensuring boundary refusals cannot be overridden by maximal control gains.
+  - Acute distress detection triggering explicit regulation candidate generation: `REAPPRAISE`, `REDIRECT_ATTENTION`, `WAIT`.
+  - Regulation execution with `ControlMarkupSanitizer`, output safety validation, stream timeout guard, and deterministic fallback lines.
+  - Decoupled Phase 03 flag gate enabling candidate selection and regulation independently of Phase 02.
+- Full suite verification:
+  - **2,049 passed, 0 failures, 0 errors, 0 skipped** across the entire backend in 60.35s.
+  - Ruff: clean across the entire repository.
+  - ASCII purity: 100% pure 7-bit ASCII verified across all Phase 03 files.
+- Benchmark verification (all 5 benchmarks passed):
+  - **BM-LOC-P3-01** (Event Appraisal Throughput): 10,000 evaluations; mean = 2.580 us, p50 = 2.542 us, p95 = 2.667 us (threshold <= 20.0 us) -> **PASS**.
+  - **BM-LOC-P3-02** (Global Controls Derivation Latency): 10,000 iterations; mean = 1.349 us, p50 = 1.333 us, p95 = 1.417 us (threshold <= 10.0 us) -> **PASS**.
+  - **BM-LOC-P3-03** (Modulated Candidate Selection Latency): 10,000 iterations (10 candidates each); mean = 12.073 us, p50 = 11.959 us, p95 = 12.875 us (threshold <= 50.0 us) -> **PASS**.
+  - **BM-GPU-P3-01** (E2E Turn Latency on RTX 2060 Super `qwen2.5:3b`): 15 standardized prompts with 2-pass warmup after model reset; baseline mean TTFT = 180.07 ms, candidate mean TTFT = 173.90 ms; mean delta = **-6.17 ms** (threshold <= 10.0 ms), p95 delta = **+8.99 ms** (threshold <= 20.0 ms) -> **PASS**.
+  - **BM-GPU-P3-02** (Multi-Turn Regulation & Soak Test on RTX 2060 Super): 20 live turns against Ollama with acute distress injections at turns 5 and 12; regulation accuracy = **100.0%** (2/2, selected `REAPPRAISE`), affect mean-reversion verified, resident memory variance = **0.0%** (threshold <= 5.0%) -> **PASS**.
+- Evaluated all 11 criteria in `ACCEPTANCE_CRITERIA.md`: 100% passed.
+- Issued formal Phase Gate verdict **`PASS`** in `orchestration/PHASE_03/PHASE_GATE.md`.
+- Empirical results documented in `orchestration/PHASE_03/BENCHMARK_RESULTS.md`.
+
+**NOT done:** Phase 04 implementation (Multi-Modal Sensory & Somatic Integration) has not started.
