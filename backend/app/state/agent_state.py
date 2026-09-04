@@ -17,6 +17,7 @@ import math
 import os
 import sqlite3
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -29,6 +30,7 @@ from ..persona import PersonaProfile
 from ..utils.background_tasks import spawn_background
 
 if TYPE_CHECKING:
+    from ..cognitive.appraisal import AppraisalRecord
     from ..cognitive.global_controls import GlobalControls
     from ..cognitive.tom import UserMentalModel
 
@@ -1181,7 +1183,7 @@ class StateService:
 
     async def apply_affect_delta(
         self,
-        affect_delta: dict[str, float],
+        affect_delta: Mapping[str, float],
         *,
         urgency: float = 0.0,
         prediction_error: float = 0.0,
@@ -1209,6 +1211,28 @@ class StateService:
                 urgency=urgency, prediction_error=prediction_error
             )
             return self._global_controls
+
+    async def appraise_and_apply_event(
+        self,
+        event_metadata: dict[str, Any],
+        active_goals: list[str],
+        expectation: float = 0.0,
+    ) -> tuple["AppraisalRecord", "GlobalControls"]:
+        """Appraise one event and atomically apply its genuine control inputs.
+
+        The appraisal reducer remains pure. This bridge owns the stateful step,
+        using goal incongruence as urgency and novelty as prediction error
+        instead of substituting the legacy relevance proxy for either signal.
+        """
+        from ..cognitive.appraisal import appraise_event
+
+        appraisal = appraise_event(event_metadata, active_goals, expectation)
+        controls = await self.apply_affect_delta(
+            appraisal.affect_delta,
+            urgency=max(0.0, -appraisal.goal_congruence),
+            prediction_error=appraisal.novelty,
+        )
+        return appraisal, controls
 
     async def update_from_appraisal(
         self, appraisal, weights: dict[str, float] | None = None
@@ -1583,6 +1607,7 @@ class StateService:
         """
         async with self._state_lock:
             level = self.current_state.release_adrenaline(amount)
+            self._refresh_global_controls_locked()
         if reason:
             logger.info(
                 "[Endocrine] Adrenaline released (%s) -- now %.2f.", reason, level

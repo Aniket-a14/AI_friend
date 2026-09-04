@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.cognitive.action_candidate import ActionCandidate, CandidateSelector
-from app.cognitive.appraisal import appraise_event
+from app.cognitive.appraisal import AppraisalRecord, appraise_event
 from app.cognitive.global_controls import (
     GlobalControls,
     derive_global_controls,
@@ -52,6 +52,46 @@ def test_global_controls_clamp_and_scale_with_declared_inputs():
     assert exhausted.effort_budget < threat.effort_budget
 
 
+def test_global_controls_reject_nonfinite_inputs_as_neutral():
+    """NaN and infinity must not silently become maximum control intensity."""
+    neutral = derive_global_controls(
+        {"valence": 0.0, "arousal": 0.0},
+        load=0.0,
+        urgency=0.0,
+        prediction_error=0.0,
+    )
+    nonfinite = derive_global_controls(
+        {"valence": float("nan"), "arousal": float("inf")},
+        load=float("nan"),
+        urgency=float("inf"),
+        prediction_error=float("nan"),
+    )
+
+    assert nonfinite == neutral
+    assert all(0.0 <= value <= 1.0 for value in nonfinite.model_dump().values())
+
+
+def test_exploration_budget_includes_positive_arousal_at_full_saturation():
+    """Architecture Section 10 assigns 0.20 of exploration to arousal."""
+    saturated = derive_global_controls(
+        {"valence": 1.0, "arousal": 1.0},
+        load=0.0,
+        urgency=0.0,
+        prediction_error=1.0,
+    )
+    without_arousal = derive_global_controls(
+        {"valence": 1.0, "arousal": 0.0},
+        load=0.0,
+        urgency=0.0,
+        prediction_error=1.0,
+    )
+
+    assert saturated.exploration_budget == pytest.approx(1.0)
+    assert saturated.exploration_budget - without_arousal.exploration_budget == pytest.approx(
+        0.20
+    )
+
+
 def test_appraisal_derives_directional_affect_without_mutating_inputs():
     """Goal fit, novelty, and control must produce the specified PAD directions."""
     event = {
@@ -80,6 +120,48 @@ def test_appraisal_derives_directional_affect_without_mutating_inputs():
     assert congruent.affect_delta["dominance"] > 0.0
     assert event == event_before
     assert active_goals == goals_before
+    with pytest.raises(TypeError):
+        congruent.affect_delta["pleasure"] = 999.0
+
+
+@pytest.mark.asyncio
+async def test_appraise_and_apply_event_uses_structured_appraisal_inputs(tmp_path):
+    """Live state updates must use appraisal values, not relevance proxies."""
+    state = StateService(
+        db_path=str(tmp_path / "structured-appraisal.db"),
+        redis_host="127.0.0.1",
+        redis_port=1,
+    )
+
+    appraisal, controls = await state.appraise_and_apply_event(
+        {
+            "event_id": "blocked-task",
+            "goal_incongruent": True,
+            "novelty": 0.8,
+        },
+        active_goals=["help-user"],
+    )
+
+    assert isinstance(appraisal, AppraisalRecord)
+    assert appraisal.event_id == "blocked-task"
+    assert appraisal.goal_congruence == -1.0
+    assert controls is state.get_global_controls()
+    assert controls.urgency_gain > 0.5
+
+
+@pytest.mark.asyncio
+async def test_adrenaline_release_refreshes_urgency_gain_immediately(tmp_path):
+    """A startle burst must affect action urgency before the next state update."""
+    state = StateService(
+        db_path=str(tmp_path / "adrenaline-controls.db"),
+        redis_host="127.0.0.1",
+        redis_port=1,
+    )
+    before = state.get_global_controls().urgency_gain
+
+    await state.release_adrenaline(0.6, reason="test")
+
+    assert state.get_global_controls().urgency_gain > before
 
 
 def test_endocrine_adapters_preserve_legacy_control_meanings():

@@ -16234,3 +16234,39 @@ merge, push, and remote CI remain outside this scoped fix round.
 
 **NOT done:** Phase 03 implementation (subconscious reflection, graph consolidation, and episodic retrieval integration) has not started.
 
+### 2026-09-04 -- Codex Phase 03 Package A fix round
+
+Changed files:
+
+- `backend/app/cognitive/global_controls.py`
+- `backend/app/cognitive/appraisal.py`
+- `backend/app/state/agent_state.py`
+- `backend/tests/test_causal_affect.py`
+- `orchestration/PHASE_03/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Adrenaline release now refreshes the immutable global-control snapshot while
+  holding the state lock, so a startle updates urgency_gain immediately.
+- Non-finite global-control inputs now reduce to a neutral safe value before
+  range clamping. Exploration includes the specified positive-arousal weight.
+- AppraisalRecord now freezes its nested affect_delta mapping. StateService
+  exposes appraise_and_apply_event(), which applies an event's genuine
+  appraisal affect delta, goal-incongruence urgency, and novelty prediction
+  error atomically.
+
+Verification:
+
+- Focused causal-affect suite: 10/10 passed.
+- Appraisal and phasic-adrenaline regression suites: 37/37 passed.
+- Ruff, git diff --check, and ASCII byte scans passed.
+- Mutation check: changing the positive-arousal exploration coefficient to
+  0.00 made its dedicated regression test fail; the intended 0.20 value was
+  restored.
+- Full-suite JUnit recorded 2,000 tests, zero failures, and eight errors. Each
+  error was an existing NATS account fixture denied permission to bind
+  127.0.0.1 by this environment; no assertion failure was observed.
+
+**NOT done:** Package B integration, remote GPU validation, remote CI, and a
+full local NATS-enabled suite remain outside this scoped worktree fix round.

@@ -7,6 +7,8 @@ identity, safety constraints, or evidence provenance.
 
 from __future__ import annotations
 
+import math
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -23,12 +25,18 @@ class GlobalControls(BaseModel):
 
 def _unit_interval(value: float) -> float:
     """Clamp a numeric control input to the closed unit interval."""
-    return max(0.0, min(1.0, float(value)))
+    numeric_value = float(value)
+    if not math.isfinite(numeric_value):
+        return 0.0
+    return max(0.0, min(1.0, numeric_value))
 
 
 def _signed_unit_interval(value: float) -> float:
     """Clamp a signed PAD value to its declared range."""
-    return max(-1.0, min(1.0, float(value)))
+    numeric_value = float(value)
+    if not math.isfinite(numeric_value):
+        return 0.0
+    return max(-1.0, min(1.0, numeric_value))
 
 
 def _pad_value(affect_pad: dict[str, float], *names: str, default: float) -> float:
@@ -62,6 +70,7 @@ def derive_global_controls(
 
     negative_valence = max(0.0, -valence)
     positive_valence = max(0.0, valence)
+    positive_arousal = max(0.0, arousal)
     available_capacity = 1.0 - bounded_load
     salience = max(bounded_urgency, arousal, abs(valence))
 
@@ -74,8 +83,9 @@ def derive_global_controls(
         ),
         exploration_budget=_unit_interval(
             0.15
-            + 0.35 * positive_valence
-            + 0.30 * bounded_prediction_error
+            + 0.20 * positive_arousal
+            + 0.20 * positive_valence
+            + 0.25 * bounded_prediction_error
             + 0.20 * available_capacity
         ),
         effort_budget=_unit_interval(

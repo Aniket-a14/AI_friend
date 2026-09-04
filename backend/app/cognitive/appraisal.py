@@ -14,7 +14,9 @@ Sources:
 import json
 import logging
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
+from types import MappingProxyType
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,7 +44,11 @@ class AppraisalRecord(BaseModel):
     agency: float = Field(default=0.0, ge=-1.0, le=1.0)
     controllability: float = Field(default=0.5, ge=0.0, le=1.0)
     novelty: float = Field(default=0.0, ge=0.0, le=1.0)
-    affect_delta: dict[str, float] = Field(default_factory=dict)
+    affect_delta: Mapping[str, float] = Field(default_factory=dict)
+
+    def model_post_init(self, __context: Any, /) -> None:
+        """Freeze the nested affect mapping as well as the record itself."""
+        object.__setattr__(self, "affect_delta", MappingProxyType(dict(self.affect_delta)))
 
 
 def _clamp(value: float, lower: float, upper: float) -> float:
