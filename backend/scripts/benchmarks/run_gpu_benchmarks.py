@@ -401,6 +401,7 @@ async def main():
     results["BM-GPU-03"] = await run_bm_gpu_03()
 
     out_path = os.path.join(BACKEND_ROOT, "..", "orchestration", "PHASE_01", "gpu_benchmark_results.json")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"\nWrote GPU benchmark results to {out_path}")
