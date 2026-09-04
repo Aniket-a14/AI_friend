@@ -59,12 +59,13 @@ async def run_bm_gpu_p6_01(
     under real Ollama GPU inference, verifying 100% authoritative state continuity.
     """
     print(f"\n--- Running BM-GPU-P6-01: Deliberative Planning Overhead ({model_tag}) ---")
+    client = OllamaClient(model=model_tag)
     _reset_model_state(model=model_tag)
     await asyncio.sleep(1.0)
 
     # Warm-up inference
     for _ in range(2):
-        async for _ in client.stream("Warmup planning request", model=model_tag):
+        async for _ in client.generate_stream("Warmup planning request", system="You are AI Friend."):
             pass
 
     planning_prompts = [
@@ -99,7 +100,7 @@ async def run_bm_gpu_p6_01(
         first_token_time: float | None = None
         chunks: list[str] = []
 
-        async for chunk in client.stream(prompt, model=model_tag):
+        async for chunk in client.generate_stream(prompt, system="You are AI Friend."):
             if first_token_time is None and chunk:
                 first_token_time = time.perf_counter()
             chunks.append(chunk)
