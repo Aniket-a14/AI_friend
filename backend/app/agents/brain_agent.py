@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import re
 import time
@@ -834,6 +835,12 @@ class BrainAgent(BaseAgent):
         if self.conversation_store and not is_subconscious:
             self.spawn(self.conversation_store.log_message(user_id, user_text))
 
+        workspace_snapshot = None
+        if not is_subconscious:
+            workspace_snapshot = await self.cognitive_core.workspace_store.get_snapshot(
+                user_id
+            )
+
         if is_subconscious:
             logger.info("💭 [Brain] Processing subconscious thought: %s", user_text)
             generator = self.cognitive_core.generate_proactive_response(
@@ -847,9 +854,24 @@ class BrainAgent(BaseAgent):
                 self.last_assistant_response = None
                 self.last_audio_progress = None
                 self._active_action_intent = None
-            generator = self.cognitive_core.process_event(
-                raw_event, percept=self.last_percept
-            )
+            process_kwargs = {
+                "percept": self.last_percept,
+                "workspace": workspace_snapshot,
+            }
+            try:
+                process_parameters = inspect.signature(
+                    self.cognitive_core.process_event
+                ).parameters
+            except (TypeError, ValueError):
+                process_parameters = {}
+            if process_parameters and "workspace" not in process_parameters:
+                accepts_kwargs = any(
+                    parameter.kind is inspect.Parameter.VAR_KEYWORD
+                    for parameter in process_parameters.values()
+                )
+                if not accepts_kwargs:
+                    process_kwargs.pop("workspace")
+            generator = self.cognitive_core.process_event(raw_event, **process_kwargs)
 
         # Wrap generator to monitor TTFT and inject fillers
         wrapped_generator = self.conversational_runtime.monitor_stream_and_fill(

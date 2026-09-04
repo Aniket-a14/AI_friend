@@ -854,6 +854,8 @@ class DecisionService:
                 clarification_subject = _clarification_subject_from_candidate(
                     selected
                 )
+            elif selected_kind == "WAIT":
+                action_type = "WAIT"
             elif selected_kind in ("REAPPRAISE", "REDIRECT_ATTENTION"):
                 # Phase 03 Package B: same reasoning as the ASK/CLARIFY
                 # mapping above -- a selected regulation candidate must

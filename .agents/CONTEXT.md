@@ -16644,3 +16644,78 @@ Verification:
 NOT done: No production code refactoring or new feature implementation was
 initiated during this audit pass per line 212 of `GEMINI_FINAL_AUDIT_ORCHESTRATOR.md`.
 No git push was performed. Recommended next stage: PRODUCTION RUNTIME CONSOLIDATION.
+
+## 2026-09-04 -- Codex Phase 07 Package A runtime composition
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` now owns and forwards the Phase 01-06 workspace, temporal
+  memory, scheduler, planning, simulation, learning, adapter, provider, and
+  external-action services. SQLite paths use the configured identity data
+  directory when present, with safe local fallbacks.
+- Foreground chat turns obtain an authoritative workspace snapshot. Session
+  dual-write refreshes that snapshot before Stage 6, so the committed intent
+  carries the current epoch and revision.
+- WAIT is realized as one terminal empty `done` chunk. EXTERNAL_ACT and unknown
+  action types terminate with an error and done signal without execution.
+
+Verification:
+
+- Focused suite: 119 passed, 0 failures, 0 errors in JUnit XML.
+- Full backend suite: 2,337 passed, 0 failures, 0 errors, 0 skipped in the
+  socket-permitted rerun. The sandboxed rerun had 8 known NATS socket setup
+  errors and no assertion failures.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no rank D, E, or F findings.
+- New code and the new test are pure 7-bit ASCII. Existing non-ASCII bytes in
+  untouched legacy portions were not rewritten.
+
+NOT done: No Package B files, configuration defaults, memory bridge, dream
+quarantine, provider benchmark, GPU benchmark, merge, or push was performed.
+
+## 2026-09-04 -- Codex Phase 07 arbitration fix round
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/cognitive/learning.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` and `ReflectionService` now share one
+  `LearningGovernor` instance and its proposal registry.
+- Configured external action dispatchers now receive typed
+  `ExternalActionIntent` values. Successful dispatch terminates cleanly;
+  missing, invalid, failed, or raising dispatch paths fail closed.
+- Surfaced memory projections preserve contradiction, outage, metadata, and
+  belief-record fields for downstream truth-aware activation adaptation.
+- Added regression tests for all three arbitration fixes and dispatcher error
+  handling.
+
+Verification:
+
+- Focused Phase 07 suite: 122 passed, 0 failures, 0 errors, 0 skipped.
+- Full backend suite: 2,332 ordinary tests passed; 8 NATS socket setup errors
+  occurred only under the restricted sandbox. The socket-permitted NATS rerun
+  passed all 8, so all 2,340 collected tests passed across the two runs.
+- `ruff check .` passed and `radon cc app/ -s -n D` reported no D, E, or F
+  findings.
+- Added and modified lines are pure 7-bit ASCII.
+
+NOT done: Package B behavior, full Phase 07 integration merge, push, and
+broader live-turn use of the composed temporal/planning/provider services.

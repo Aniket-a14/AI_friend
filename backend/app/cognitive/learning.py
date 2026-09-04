@@ -8,6 +8,7 @@ from ..measure_trace import trace as _measure_trace
 from ..state.graph_db import GraphDB
 from .identity import IdentityManager
 from .json_extract import extract_first_json_value
+from .learning_governance import LearningGovernor
 from .learning_review import LearningReviewQueue
 
 logger = logging.getLogger("reflection")
@@ -20,7 +21,12 @@ class ReflectionService:
     """
 
     def __init__(
-        self, llm_service=None, graph_store=None, pg_vector=None, identity_manager=None
+        self,
+        llm_service=None,
+        graph_store=None,
+        pg_vector=None,
+        identity_manager=None,
+        governor: LearningGovernor | None = None,
     ):
         self.llm = llm_service
         self.graph = graph_store
@@ -36,6 +42,7 @@ class ReflectionService:
         self.last_reflection_started_at = 0.0
         # Phase 5C: proposals wait here when Config.LEARNING_REVIEW_REQUIRED.
         self.review_queue = LearningReviewQueue()
+        self.governor = governor or LearningGovernor()
 
         # AI Friend: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
