@@ -9,7 +9,6 @@ import asyncio
 import json
 import os
 import sys
-import tempfile
 import time
 import urllib.request
 from typing import Any
@@ -23,7 +22,6 @@ from app.cognitive.calibration import CapabilityLimitationModel, DomainCalibrati
 from app.config import Config
 from app.llm.ollama_client import OllamaClient
 from app.state.person_model import PersonModel
-from app.state.workspace_store import SQLiteWorkspaceStore
 
 STANDARDIZED_PROMPTS = [
     "Hello, how are you today?",
