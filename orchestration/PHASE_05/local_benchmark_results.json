@@ -1,0 +1,54 @@
+{
+  "phase": "PHASE_05",
+  "timestamp": "2026-09-04 18:50:44",
+  "benchmarks": [
+    {
+      "benchmark_id": "BM-LOC-P5-01",
+      "title": "Voice Compiler Throughput & Loss Telemetry",
+      "iterations": 1000,
+      "mean_us": 3.448,
+      "p50_us": 3.417,
+      "p95_us": 3.667,
+      "p99_us": 5.125,
+      "capture_rate_pct": 100.0,
+      "target_mean_us": "< 50.0",
+      "verdict": "PASS"
+    },
+    {
+      "benchmark_id": "BM-LOC-P5-02",
+      "title": "Vision Normalization & Invariant Check",
+      "iterations": 1000,
+      "mean_us": 10.155,
+      "p50_us": 10.75,
+      "p95_us": 11.333,
+      "p99_us": 15.541,
+      "corruption_rate_pct": 0.0,
+      "target_mean_us": "< 50.0",
+      "verdict": "PASS"
+    },
+    {
+      "benchmark_id": "BM-LOC-P5-03",
+      "title": "Model Role Capability Negotiation Latency",
+      "iterations": 1000,
+      "mean_us": 0.262,
+      "p50_us": 0.25,
+      "p95_us": 0.292,
+      "p99_us": 0.334,
+      "target_mean_us": "< 10.0",
+      "verdict": "PASS"
+    },
+    {
+      "benchmark_id": "BM-LOC-P5-04",
+      "title": "External Action Risk & Authorization Gating",
+      "iterations": 1000,
+      "mean_us": 0.137,
+      "p50_us": 0.125,
+      "p95_us": 0.167,
+      "p99_us": 0.209,
+      "unauthorized_block_rate_pct": 100.0,
+      "target_mean_us": "< 10.0",
+      "verdict": "PASS"
+    }
+  ],
+  "overall_verdict": "PASS"
+}
