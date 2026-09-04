@@ -16337,3 +16337,33 @@ full local NATS-enabled suite remain outside this scoped worktree fix round.
 
 **NOT done:** Persistent database storage for `PersonModel` records (beyond in-memory `AgentState`), multi-party audio speaker diarization, and Phase 05 (Provider and embodiment portability) have not started.
 
+### 2026-09-04 -- Codex Phase 05 Package A: voice boundary and external actions
+
+- Added `SpeechIntent` as the versioned, provider-neutral Section 23 contract
+  with affect, epistemics, relationship, delivery, timeline, and turn-policy
+  submodels. `build_speech_intent` stamps fresh IDs without altering the
+  existing expression wire.
+- Added capability-declared ElevenLabs and GPT-SoVITS compilers. They produce
+  provider payload descriptions only, preserve semantic text, and emit an
+  `IntentLossRecord` for every dropped or substituted requested dimension.
+- Added bidirectional compatibility adapters between the legacy
+  `AgentVoiceModulation` payload and the new intent contract.
+- Added governed `ExternalActionIntent` dispatch: HIGH, CRITICAL, and
+  IRREVERSIBLE requests require a nonblank authorization token; unregistered
+  tools are simulated, and all results can be recorded as terminal
+  `OutcomeRecord` instances.
+- Added focused regression coverage for schema validation, compiler protocol
+  conformance, telemetry, migration, risk gating, outcomes, and ASCII purity.
+
+Verification:
+
+- `pytest tests/test_voice_external_action.py`: 13 passed (JUnit XML).
+- `ruff check .`: passed.
+- `radon cc app/ -s -n D`: passed with no reported functions.
+- Full backend suite: 2,102 passed with loopback socket permission (JUnit XML).
+- Mutation check: inverted the authorization condition; the focused suite
+  failed four risk-gating assertions, then the exact implementation was restored.
+
+**NOT done:** No live provider, actuator, or NATS wiring was added. These
+adapters remain intentionally in-process contracts until integration owns the
+runtime dispatch and playback-feedback boundaries.
