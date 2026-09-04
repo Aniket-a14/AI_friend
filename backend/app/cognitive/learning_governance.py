@@ -26,13 +26,31 @@ versioned change -> monitor -> rollback on regression. `LearningGovernor`
 owns exactly this state machine; `LearningApprovalGate` owns only the
 risk-tiered approval decision, kept separate so an approval policy can be
 swapped or unit-tested without touching lifecycle bookkeeping.
+
+Fix round (orchestration/PHASE_06/FIX_PLAN.md, Package B P0-1/P1-2/P1-3):
+peer review (`CODEX_REVIEW_OF_CLAUDE.md`) demonstrated the original hard
+invariant only ever inspected `target_domain`, so a proposal could name an
+innocuous domain while smuggling a protected field into `proposed_value`;
+that its delimiter set missed braces/parens/commas/backslashes and any
+joined or camelCase spelling; and that nothing re-checked a proposal
+between `approve()` and `activate()`/`rollback()`, so a mutated proposal
+(pydantic models are not frozen) could bypass every earlier check. All
+three are fixed below. Separately, `activate()`/`rollback()` now raise a
+dedicated `LearningStateApplyError` rather than leaking whatever exception
+`state_applier` happens to raise, and never transition proposal status when
+it does; and `LearningProgressCuriosity` rejects non-finite observations
+and requires a delta to be large relative to each window's own spread, not
+just above a fixed threshold, so a high-variance oscillation can no longer
+outrank genuine steady progress.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import time
 import uuid
+from collections.abc import Iterator
 from enum import Enum
 from typing import Any
 
@@ -57,11 +75,19 @@ class LearningProposalStatus(str, Enum):
     ROLLED_BACK = "ROLLED_BACK"
 
 
+class LearningStateApplyError(RuntimeError):
+    """Raised when a `state_applier` callback fails inside `activate()` or
+    `rollback()`. The proposal's status is never transitioned when this is
+    raised -- the caller can trust that a status still reading APPROVED or
+    ACTIVATED means the corresponding state write did not go through."""
+
+
 class LearningProposal(BaseModel):
     """Section 21's proposal record. Every field the architecture requires
     ("source records, proposed target/value, expected effect, risk class,
-    ... counterfactual baseline, approval policy, activation revision,
-    rollback value") is a real field here, not a dict key a caller has to
+    training/eval provenance if relevant, counterfactual baseline, approval
+    policy, activation revision, rollback value, and post-activation
+    measurement") is a real field here, not a dict key a caller has to
     remember to set."""
 
     proposal_id: str = Field(default_factory=lambda: uuid.uuid4().hex)
@@ -81,15 +107,24 @@ class LearningProposal(BaseModel):
     created_at: float = Field(default_factory=time.time)
     evaluated_at: float | None = None
     rejection_reason: str | None = None
+    # Fix round (P1-1): Section 21 names "training/eval provenance if
+    # relevant" and "post-activation measurement" as part of a proposal's
+    # required record, alongside the fields above. Both are optional --
+    # most proposals in this codebase are not offline-adapter-training
+    # proposals, so "if relevant" is load-bearing -- but when set, they are
+    # real, typed fields rather than something bolted onto `proposed_value`.
+    training_provenance: dict[str, Any] | None = None
+    post_activation_measurement: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
 # Hard invariant: identity core, constitutional bounds, and safety
 # boundaries can never be a learning target, at any risk class, from any
-# source. `target_domain` is a free-text dotted/delimited path (e.g.
-# "persona.mood_decay_rate", "identity.core_values"); the check below
-# tokenizes it on any common delimiter so a proposal cannot dodge the block
-# by choice of separator, bracket, or case.
+# source, whether named directly in `target_domain` or smuggled into a key
+# anywhere inside `proposed_value`/`rollback_value`. Every string checked
+# below is tokenized on any common delimiter (and camelCase boundary) so a
+# proposal cannot dodge the block by choice of separator, bracket, case, or
+# joined spelling.
 # ---------------------------------------------------------------------------
 
 _STATIC_PROTECTED_PHRASES: tuple[tuple[str, ...], ...] = (
@@ -101,14 +136,29 @@ _STATIC_PROTECTED_PHRASES: tuple[tuple[str, ...], ...] = (
     ("safety", "boundaries"),
 )
 
-_DOMAIN_DELIMITER_PATTERN = re.compile(r"[.:/\[\]_\-\s]+")
+# Fix round (P0-1): the original pattern recognized only `.:/[]_-` and
+# whitespace. Peer review demonstrated `persona{mood_decay_rate}` (braces)
+# slipping through untouched; parentheses, commas, and backslashes are the
+# same class of gap. All are now treated as the same word boundary.
+_DOMAIN_DELIMITER_PATTERN = re.compile(r"[.:/\[\]{}(),\\_\-\s]+")
+
+# Splits a camelCase boundary (a lowercase-or-digit character immediately
+# followed by an uppercase one) into a delimiter, so "moodDecayRate" and
+# "userName" tokenize the same way "mood_decay_rate" and "user_name" do.
+_CAMEL_BOUNDARY_PATTERN = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+# Strips everything except letters and digits, for the joined-phrase
+# substring check below.
+_ALNUM_ONLY_PATTERN = re.compile(r"[^a-z0-9]")
 
 
-def _normalize_domain_tokens(target_domain: str) -> list[str]:
-    """Lowercase whitespace/delimiter-separated tokens for `target_domain`,
-    treating `.`, `:`, `/`, `[`, `]`, `_`, and `-` all as the same word
-    boundary as a literal space."""
-    return [t for t in _DOMAIN_DELIMITER_PATTERN.split((target_domain or "").lower()) if t]
+def _normalize_domain_tokens(text: str) -> list[str]:
+    """Lowercase, delimiter- and camelCase-boundary-separated tokens for
+    `text`. Applying the camelCase split before lowercasing is what lets
+    "moodDecayRate" tokenize to ["mood", "decay", "rate"] exactly like
+    "mood_decay_rate" does."""
+    spaced = _CAMEL_BOUNDARY_PATTERN.sub(" ", text or "")
+    return [t for t in _DOMAIN_DELIMITER_PATTERN.split(spaced.lower()) if t]
 
 
 def _tokens_contain_phrase(tokens: list[str], phrase: tuple[str, ...]) -> bool:
@@ -120,6 +170,20 @@ def _tokens_contain_phrase(tokens: list[str], phrase: tuple[str, ...]) -> bool:
         tuple(tokens[start : start + phrase_len]) == phrase
         for start in range(len(tokens) - phrase_len + 1)
     )
+
+
+def _contains_joined_phrase(text: str, phrase: tuple[str, ...]) -> bool:
+    """True if `phrase`'s words appear concatenated with zero separators and
+    zero case cues at all (e.g. "mooddecayrate"), as a substring of `text`
+    once every non-alphanumeric character is stripped. Restricted to
+    phrases of two or more words: a single common word like "name" would
+    false-positive against an unrelated word like "nickname" under plain
+    substring matching, so single-word phrases rely on exact tokenization
+    (`_tokens_contain_phrase`) instead, never this."""
+    if len(phrase) < 2:
+        return False
+    stripped = _ALNUM_ONLY_PATTERN.sub("", (text or "").lower())
+    return "".join(phrase) in stripped
 
 
 def _protected_phrases() -> tuple[tuple[str, ...], ...]:
@@ -140,22 +204,78 @@ def _protected_phrases() -> tuple[tuple[str, ...], ...]:
 _PROTECTED_PHRASES: tuple[tuple[str, ...], ...] = _protected_phrases()
 
 
-def check_targets_protected_domain(target_domain: str) -> tuple[bool, str]:
-    """(True, reason) if `target_domain` names the immutable persona core, a
-    safety invariant, or a CONSTITUTIONAL-tier field, under any delimiter or
-    casing variation; (False, "") otherwise. This is the one check every
-    lifecycle entry point below re-runs -- Section 21's "Identity core and
-    safety boundaries are never learned" admits no exception by risk class
-    or source."""
-    tokens = _normalize_domain_tokens(target_domain)
+def _string_names_protected_region(text: str) -> tuple[str, ...] | None:
+    """The matched phrase if `text` names a protected region under any
+    delimiter, camelCase, joined, or casing variation; `None` otherwise."""
+    tokens = _normalize_domain_tokens(text)
     for phrase in _PROTECTED_PHRASES:
         if _tokens_contain_phrase(tokens, phrase):
-            return True, (
-                f"target_domain '{target_domain}' names a protected region "
-                f"('{' '.join(phrase)}') -- immutable core, safety invariant, "
-                "or constitutional bound -- and can never be a learning target"
-            )
+            return phrase
+    for phrase in _PROTECTED_PHRASES:
+        if _contains_joined_phrase(text, phrase):
+            return phrase
+    return None
+
+
+def _iter_nested_string_keys(value: Any) -> Iterator[str]:
+    """Yield every dict key found anywhere inside `value`, at any nesting
+    depth, including keys on dicts nested inside list/tuple/set elements.
+    This is what lets `check_targets_protected_domain` catch a protected
+    field name smuggled into `proposed_value`/`rollback_value` rather than
+    written into `target_domain` where the earlier version only looked."""
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if isinstance(key, str):
+                yield key
+            yield from _iter_nested_string_keys(nested)
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        for item in value:
+            yield from _iter_nested_string_keys(item)
+
+
+def _protected_reason(source: str, text: str, phrase: tuple[str, ...]) -> str:
+    return (
+        f"{source} {text!r} names a protected region "
+        f"('{' '.join(phrase)}') -- immutable core, safety invariant, "
+        "or constitutional bound -- and can never be a learning target"
+    )
+
+
+def check_targets_protected_domain(
+    target_domain: str,
+    proposed_value: Any = None,
+    rollback_value: Any = None,
+) -> tuple[bool, str]:
+    """(True, reason) if `target_domain`, or any key anywhere inside
+    `proposed_value`/`rollback_value` (at any nesting depth), names the
+    immutable persona core, a safety invariant, or a CONSTITUTIONAL-tier
+    field -- under any delimiter, camelCase, joined, or casing variation.
+    (False, "") otherwise. This is the one check every lifecycle entry
+    point below re-runs -- Section 21's "Identity core and safety
+    boundaries are never learned" admits no exception by risk class,
+    source, or which field of the proposal actually names the target."""
+    phrase = _string_names_protected_region(target_domain)
+    if phrase is not None:
+        return True, _protected_reason("target_domain", target_domain, phrase)
+
+    for label, value in (("proposed_value", proposed_value), ("rollback_value", rollback_value)):
+        for key in _iter_nested_string_keys(value):
+            phrase = _string_names_protected_region(key)
+            if phrase is not None:
+                return True, _protected_reason(label, key, phrase)
     return False, ""
+
+
+def _proposal_targets_protected_region(proposal: LearningProposal) -> tuple[bool, str]:
+    """`check_targets_protected_domain` against a live proposal's current
+    field values -- deliberately re-reading `proposal.target_domain`/
+    `.proposed_value`/`.rollback_value` fresh every call rather than a
+    cached copy, since `LearningProposal` is a mutable model and this is
+    the re-check that catches a proposal mutated after an earlier check
+    already passed."""
+    return check_targets_protected_domain(
+        proposal.target_domain, proposal.proposed_value, proposal.rollback_value
+    )
 
 
 class LearningApprovalGate:
@@ -180,7 +300,7 @@ class LearningApprovalGate:
 
     def evaluate(self, proposal: LearningProposal) -> tuple[bool, str]:
         """(approved, reason). Never mutates `proposal`."""
-        protected, reason = check_targets_protected_domain(proposal.target_domain)
+        protected, reason = _proposal_targets_protected_region(proposal)
         if protected:
             return False, reason
 
@@ -222,9 +342,10 @@ class LearningGovernor:
         """Register a new PROPOSED proposal. Raises ValueError -- and
         registers nothing -- for a duplicate id, a non-PROPOSED status, a
         missing `rollback_value` (a proposal with nothing to roll back to
-        can never be safely activated), or a protected `target_domain`.
-        Rejecting here, before the proposal is even stored, is the
-        strictest reading of "strictly reject" the hard invariant asks for.
+        can never be safely activated), or a protected `target_domain`/
+        `proposed_value`/`rollback_value`. Rejecting here, before the
+        proposal is even stored, is the strictest reading of "strictly
+        reject" the hard invariant asks for.
         """
         if proposal.proposal_id in self._proposals:
             raise ValueError(f"duplicate proposal_id {proposal.proposal_id!r}")
@@ -237,7 +358,7 @@ class LearningGovernor:
                 "proposal has no rollback_value; a change that cannot be "
                 "undone in one step cannot be submitted"
             )
-        protected, reason = check_targets_protected_domain(proposal.target_domain)
+        protected, reason = _proposal_targets_protected_region(proposal)
         if protected:
             raise ValueError(reason)
         self._proposals[proposal.proposal_id] = proposal
@@ -246,9 +367,10 @@ class LearningGovernor:
     def validate(self, proposal_id: str) -> LearningProposal:
         """PROPOSED -> VALIDATED, or REJECTED if a defense-in-depth
         immutable/constitutional re-check now fails (the model is mutable,
-        so `target_domain` could in principle have changed since submit)."""
+        so any of its fields could in principle have changed since
+        submit)."""
         proposal = self._transition(proposal_id, LearningProposalStatus.PROPOSED)
-        protected, reason = check_targets_protected_domain(proposal.target_domain)
+        protected, reason = _proposal_targets_protected_region(proposal)
         if protected:
             return self._reject(proposal, reason)
         proposal.status = LearningProposalStatus.VALIDATED
@@ -266,14 +388,31 @@ class LearningGovernor:
         return proposal
 
     def activate(self, proposal_id: str) -> LearningProposal:
-        """APPROVED -> ACTIVATED. Applies `proposed_value` via the
-        configured `state_applier` (if any) and stamps a new, monotonically
-        increasing `activation_revision` -- the versioned change Section 21
-        requires so a later rollback restores a specific, named revision
-        rather than an ambiguous "previous" state."""
+        """APPROVED -> ACTIVATED. Re-checks the hard invariant one last
+        time against the proposal's current (possibly mutated) fields --
+        catching a proposal that passed submit/validate/approve honestly
+        and then had `target_domain`/`proposed_value`/`rollback_value`
+        mutated afterward -- and, only if that still passes, applies
+        `proposed_value` via the configured `state_applier` and stamps a
+        new, monotonically increasing `activation_revision`. If the
+        invariant now fails, the proposal is rejected the same way
+        `validate()` rejects one, since nothing has been written yet. If
+        `state_applier` raises, `LearningStateApplyError` propagates and
+        the proposal is left APPROVED (not ACTIVATED) -- see
+        `LearningStateApplyError`."""
         proposal = self._transition(proposal_id, LearningProposalStatus.APPROVED)
+        protected, reason = _proposal_targets_protected_region(proposal)
+        if protected:
+            return self._reject(proposal, reason)
         if self._state_applier is not None:
-            self._state_applier(proposal.target_domain, proposal.proposed_value)
+            try:
+                self._state_applier(proposal.target_domain, proposal.proposed_value)
+            except Exception as error:
+                raise LearningStateApplyError(
+                    f"activation of proposal {proposal_id!r} failed while "
+                    f"applying state; proposal remains APPROVED, not "
+                    f"ACTIVATED: {error}"
+                ) from error
         self._revision += 1
         proposal.activation_revision = self._revision
         proposal.status = LearningProposalStatus.ACTIVATED
@@ -285,10 +424,32 @@ class LearningGovernor:
         flips status. There is no intermediate, partially-rolled-back state
         another reader of this governor can observe -- either this call
         raises and nothing changes, or it fully restores and marks the
-        proposal ROLLED_BACK."""
+        proposal ROLLED_BACK.
+
+        Re-checks the hard invariant first, against the proposal's current
+        fields. Unlike `activate()`, a failure here does not reject the
+        proposal -- real state may already reflect an ACTIVATED change, so
+        silently relabeling it REJECTED would misrepresent that history.
+        Instead this raises ValueError and leaves the proposal ACTIVATED,
+        refusing to perform the now-untrusted restore. If `state_applier`
+        itself raises, `LearningStateApplyError` propagates and the
+        proposal is left ACTIVATED (not ROLLED_BACK)."""
         proposal = self._transition(proposal_id, LearningProposalStatus.ACTIVATED)
+        protected, reason = _proposal_targets_protected_region(proposal)
+        if protected:
+            raise ValueError(
+                f"proposal {proposal_id!r} now targets a protected region; "
+                f"rollback refused and the proposal remains ACTIVATED: {reason}"
+            )
         if self._state_applier is not None:
-            self._state_applier(proposal.target_domain, proposal.rollback_value)
+            try:
+                self._state_applier(proposal.target_domain, proposal.rollback_value)
+            except Exception as error:
+                raise LearningStateApplyError(
+                    f"rollback of proposal {proposal_id!r} failed while "
+                    f"applying state; proposal remains ACTIVATED, not "
+                    f"ROLLED_BACK: {error}"
+                ) from error
         proposal.status = LearningProposalStatus.ROLLED_BACK
         return proposal
 
@@ -317,6 +478,19 @@ class LearningGovernor:
         return proposal
 
 
+def _mean(values: list[float]) -> float:
+    return sum(values) / len(values)
+
+
+def _stdev(values: list[float]) -> float:
+    """Population standard deviation of `values` (non-empty by every
+    caller's construction -- both windows are always exactly
+    `window_size` long)."""
+    mean = _mean(values)
+    variance = sum((value - mean) ** 2 for value in values) / len(values)
+    return variance**0.5
+
+
 class LearningProgressCuriosity:
     """Learning-progress curiosity (Section 38 Phase 6): ranks domains by
     how fast an empirical error/loss signal is improving, not by how good
@@ -326,6 +500,15 @@ class LearningProgressCuriosity:
     learn, and a domain that is pure noise (no consistent trend) is not
     interesting because nothing is actually being learned there either --
     only a domain with a real, sustained error reduction ranks.
+
+    Fix round (P1-3): the original noise filter compared a two-window mean
+    delta against one fixed absolute threshold, which peer review showed a
+    high-variance oscillation can clear by chance (`[1, 0, 1, 0.2, 0, 0.2]`
+    swings between 0 and 1 within each window, yet its raw window-mean
+    delta is large). `rank()` now also requires the delta to be large
+    relative to each window's own spread (`stability_factor` times the
+    larger of the two windows' standard deviations) -- a reliable-trend
+    check, not just a magnitude check.
     """
 
     def __init__(
@@ -333,6 +516,7 @@ class LearningProgressCuriosity:
         window_size: int = 5,
         noise_threshold: float = 0.02,
         mastery_threshold: float = 0.05,
+        stability_factor: float = 2.0,
     ) -> None:
         if window_size < 2:
             raise ValueError("window_size must be at least 2 to form two windows")
@@ -340,16 +524,24 @@ class LearningProgressCuriosity:
             raise ValueError("noise_threshold must be non-negative")
         if mastery_threshold < 0.0:
             raise ValueError("mastery_threshold must be non-negative")
+        if stability_factor < 0.0:
+            raise ValueError("stability_factor must be non-negative")
         self.window_size = window_size
         self.noise_threshold = noise_threshold
         self.mastery_threshold = mastery_threshold
+        self.stability_factor = stability_factor
         self._history: dict[str, list[float]] = {}
 
     def record(self, domain: str, error: float) -> None:
         """Append one empirical error/loss observation for `domain` (lower
         is better competence). Keeps only the samples needed for two
         adjacent windows, so this stays bounded regardless of how long a
-        domain has been tracked."""
+        domain has been tracked. Raises ValueError for a non-finite `error`
+        (NaN or +/-infinity) -- neither is an empirical measurement, and a
+        NaN in particular would silently poison every downstream mean and
+        comparison rather than raising anywhere near its source."""
+        if math.isnan(error) or math.isinf(error):
+            raise ValueError(f"error must be a finite number, got {error!r}")
         history = self._history.setdefault(domain, [])
         history.append(error)
         max_len = self.window_size * 2
@@ -365,7 +557,7 @@ class LearningProgressCuriosity:
             return None
         recent = history[-self.window_size :]
         older = history[-self.window_size * 2 : -self.window_size]
-        return (sum(older) / len(older)) - (sum(recent) / len(recent))
+        return _mean(older) - _mean(recent)
 
     def is_mastered(self, domain: str) -> bool:
         """True if the recent window's mean error is already at or below
@@ -374,10 +566,25 @@ class LearningProgressCuriosity:
         if len(history) < self.window_size:
             return False
         recent = history[-self.window_size :]
-        return (sum(recent) / len(recent)) <= self.mastery_threshold
+        return _mean(recent) <= self.mastery_threshold
+
+    def _is_reliable_progress(self, domain: str, delta: float) -> bool:
+        """True if `delta` is large relative to the noisier of the two
+        windows' own spread, not just numerically above
+        `noise_threshold`. A window with zero internal spread (every
+        sample identical) makes any positive delta trivially reliable,
+        since there is no noise to distinguish it from."""
+        history = self._history[domain]
+        recent = history[-self.window_size :]
+        older = history[-self.window_size * 2 : -self.window_size]
+        combined_spread = max(_stdev(recent), _stdev(older))
+        if combined_spread <= 0.0:
+            return True
+        return delta > self.stability_factor * combined_spread
 
     def rank(self) -> list[tuple[str, float]]:
-        """Domains with a real (above-`noise_threshold`) positive progress
+        """Domains with a real (above-`noise_threshold`, and reliable
+        relative to their own within-window spread) positive progress
         delta, excluding mastered ones, ranked highest-progress first."""
         ranked: list[tuple[str, float]] = []
         for domain in self._history:
@@ -385,6 +592,8 @@ class LearningProgressCuriosity:
                 continue
             delta = self.progress_delta(domain)
             if delta is None or delta <= self.noise_threshold:
+                continue
+            if not self._is_reliable_progress(domain, delta):
                 continue
             ranked.append((domain, delta))
         ranked.sort(key=lambda item: item[1], reverse=True)

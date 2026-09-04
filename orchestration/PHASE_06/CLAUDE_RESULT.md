@@ -325,4 +325,249 @@ afterward (see the final verification block above, run last).
 
 ---
 
+---
+
+## 7. Fix Round (peer-review response)
+
+Following reciprocal review, `orchestration/PHASE_06/FIX_PLAN.md` sustained
+all five findings from `CODEX_REVIEW_OF_CLAUDE.md`
+(`orchestration/PHASE_06/CLAUDE_FIX_TASK.md`). This section records what
+changed in response; sections 1-6 above describe the original
+implementation and are otherwise unchanged. All fixes stayed inside the
+three originally-owned files -- no new files, no changes outside this
+package's ownership.
+
+### P0-1: the immutable/safety hard invariant was bypassable
+
+The review demonstrated three concrete gaps in `check_targets_protected_domain`:
+it only ever inspected `target_domain`, so `{"mood_decay_rate": 0.0}` inside
+`proposed_value` passed untouched; its delimiter set missed braces, parens,
+commas, and backslashes (`persona{mood_decay_rate}` and joined/camelCase
+spellings like `moodDecayRate` were unrecognized); and nothing re-checked a
+proposal between `approve()` and `activate()`/`rollback()`, so a proposal
+mutated after passing every earlier check (`LearningProposal` is not frozen)
+would activate anyway.
+
+- `app/cognitive/learning_governance.py`: `check_targets_protected_domain`
+  now takes optional `proposed_value`/`rollback_value` arguments and, via a
+  new `_iter_nested_string_keys` generator, recursively inspects every dict
+  key at any nesting depth (including keys on dicts nested inside lists) in
+  both. `_DOMAIN_DELIMITER_PATTERN` gained `{}()," "\\"` (and slash/colon
+  were already present). A new `_CAMEL_BOUNDARY_PATTERN` splits a
+  lowercase-to-uppercase transition into a delimiter before tokenizing, so
+  `moodDecayRate`/`userName` tokenize identically to
+  `mood_decay_rate`/`user_name`. A new `_contains_joined_phrase` handles the
+  fully-joined, zero-cues case (`mooddecayrate`) via a substring check
+  against an alnum-stripped, lowercased form of the text -- deliberately
+  restricted to phrases of two or more words, since a single common word
+  like `name` would false-positive against an unrelated word like
+  `nickname` under plain substring matching (`user.nickname` is confirmed
+  by a dedicated test to remain unprotected).
+- New `_proposal_targets_protected_region(proposal)` re-reads a live
+  proposal's current `target_domain`/`proposed_value`/`rollback_value` on
+  every call (never a cached copy) and is now the single call site every
+  lifecycle method uses, including two new ones: `activate()` re-checks
+  before applying `proposed_value` (a hit rejects the proposal, mirroring
+  `validate()` -- nothing has been written yet) and `rollback()` re-checks
+  before applying `rollback_value` (a hit raises `ValueError` and leaves
+  status ACTIVATED rather than relabeling it REJECTED, since real state may
+  already reflect the ACTIVATED change and silently relabeling would
+  misrepresent that history).
+- 13 new tests: protected keys nested in `proposed_value` (top-level,
+  one level deep, inside a list of dicts) and in `rollback_value`; the six
+  expanded-delimiter/camelCase/joined variants named by the review; a
+  negative control proving the joined check does not false-positive on
+  `user.nickname`; `submit()` hard-rejecting a protected `proposed_value`
+  key; a proposal mutated to a protected `target_domain` after `approve()`
+  being rejected at `activate()`; the same for a mutated `proposed_value`;
+  and rollback refusing (raising, not rejecting) when `rollback_value` is
+  mutated to a protected key after activation.
+
+### P0-2: adapter qualification and activation did not preserve the zero-regression/digest gate
+
+The review demonstrated `qualify()` comparing only the *intersection* of
+baseline and candidate probe ids, so a candidate that silently dropped a
+formerly-passing probe from its held-out run qualified anyway; and
+`activate()` trusting a caller-supplied `AdapterQualificationResult` and an
+arbitrary caller-supplied digest pair with no tie back to what `qualify()`
+itself verified, so a caller could construct
+`AdapterQualificationResult(adapter_id="candidate", qualified=True, ...)`
+directly and activate it against digests nobody checked.
+
+- `app/llm/adapter_gate.py`: `qualify()` now computes
+  `missing_probe_ids = baseline_ids - candidate_ids` and folds it into
+  `regression_detected` (`bool(regressed) or bool(missing_probe_ids) or not
+  baseline_ids`) -- a missing result now fails closed instead of being
+  silently excluded from the compared set. `missing_probe_ids` is also
+  surfaced in `details` for auditability.
+- New internal `_QualificationRecord` (frozen dataclass) and
+  `OfflineAdapterGate._qualification_records: dict[str, _QualificationRecord]`,
+  populated only by `qualify()` (replaced on a later re-qualification of the
+  same `adapter_id`) and read only by `activate()`. `activate()`'s
+  signature changed from `(request, result, prompt_digest,
+  constitution_digest)` to `(adapter_id, current_prompt_digest,
+  current_constitution_digest)` -- there is no longer a parameter a caller
+  could hand a fabricated result through at all. `activate()` looks up the
+  record by `adapter_id`, requires `record.qualified`, and requires both
+  current digests to still equal what the record verified at qualification
+  time -- closing not only "caller supplies the wrong digest" but also "the
+  live persona/prompt changed between `qualify()` and `activate()`,"
+  which the pre-fix version could not distinguish from a legitimate
+  activation.
+- 6 new tests: a missing baseline probe failing qualification closed with
+  the specific probe id named in `details`; a mismatched current prompt
+  digest and a mismatched current constitution digest at activation time,
+  each independently refused; an unregistered adapter id refused; a forged
+  `AdapterQualificationResult(qualified=True, ...)` documented as having no
+  parameter to reach `activate()` through; and re-qualifying the same
+  adapter id (first failing, then passing) correctly replacing its
+  registered record rather than accumulating stale state.
+- All nine pre-existing adapter tests were re-verified against the new
+  fail-closed/registry semantics by hand (each one's `missing_probe_ids`,
+  `shared`, and `regression_detected` recomputed under the new logic) before
+  the two `activate()` call sites they exercise were updated to the new
+  signature; all nine still pass unchanged in intent.
+
+### P1-1: Section 21 schema completeness
+
+`LearningProposal` gained `training_provenance: dict[str, Any] | None =
+None` and `post_activation_measurement: dict[str, Any] | None = None`,
+completing the field list Section 21 names. Both are ordinary fields on the
+same mutable model instance the governor transitions in place, so they
+survive every lifecycle transition automatically -- no special-cased
+plumbing was needed, only the fields themselves. 2 new tests: both fields
+default to `None`, and both are readable, unchanged, from `governor.get()`
+after a full submit-through-activate run with `training_provenance` set at
+construction and `post_activation_measurement` set post-activation.
+
+### P1-2: atomicity and error handling in state mutations
+
+The review's concern: a `state_applier` that raises leaves no reliable
+signal for whether the underlying write happened, and the proposal's status
+could end up out of sync with it. New `LearningStateApplyError(RuntimeError)`
+now wraps any exception `state_applier` raises inside `activate()` (message:
+"...proposal remains APPROVED, not ACTIVATED...") and `rollback()` (message:
+"...proposal remains ACTIVATED, not ROLLED_BACK..."), via `raise ... from
+error` so the original exception is preserved as `__cause__`. Status
+mutation was already, and remains, the last statement in each method after
+a successful applier call, so a raised `LearningStateApplyError` -- caught
+or not -- always leaves the proposal in its pre-call status; the fix makes
+that guarantee explicit and gives callers one specific, catchable exception
+type instead of whatever `state_applier` happened to raise. 2 new tests: an
+always-failing applier during `activate()` leaves status APPROVED with
+`activation_revision` still `None`; an applier that fails on its *second*
+call (the rollback call, after a successful activation) leaves status
+ACTIVATED.
+
+### P1-3: curiosity robustness against noise and non-finite inputs
+
+The review's exact adversarial example: with `window_size=3`, the sequence
+`[1, 0, 1, 0.2, 0, 0.2]` oscillates between 0 and 1 within each window, yet
+its raw two-window-mean delta (0.53) cleared the old fixed
+`noise_threshold` and would have outranked a genuinely steadily-improving
+domain. Separately, `record()` accepted `NaN`/infinity, and a `NaN` in
+particular would silently poison every downstream mean and comparison
+rather than raising anywhere near its source.
+
+- `app/cognitive/learning_governance.py`: `record()` now raises `ValueError`
+  for `math.isnan(error) or math.isinf(error)`. New `stability_factor: float
+  = 2.0` constructor parameter (validated non-negative, like the other three
+  thresholds) and `_is_reliable_progress(domain, delta)`: computes the
+  population standard deviation of each window (`_stdev`, new module-level
+  helper alongside a new `_mean`) and requires
+  `delta > stability_factor * max(recent_stdev, older_stdev)` -- a
+  zero-spread window (every sample identical) makes any positive delta
+  trivially reliable, since there is no noise to distinguish it from.
+  `rank()` now calls this as an additional filter after the existing
+  `noise_threshold` check, before appending a domain to the ranked list.
+  `progress_delta()`/`is_mastered()` are unchanged -- the review scoped this
+  to `rank()`'s trend evaluation, not the raw statistics themselves.
+- 3 new tests: `stability_factor < 0` rejected at construction; all three
+  non-finite variants (`nan`, `inf`, `-inf`) rejected by `record()`;
+  the review's exact `[1, 0, 1, 0.2, 0, 0.2]` sequence, alongside a
+  genuinely steady-progress domain, first asserting the raw delta *does*
+  clear `noise_threshold` (proving the test exercises the new stability
+  filter specifically, not a case the old threshold-only check would have
+  excluded anyway), then asserting `rank()` returns only the steady-progress
+  domain.
+
+### Verification (fix round)
+
+Run from `backend/` against the shared interpreter
+(`/Users/aniketsaha/Projects/AI_friend/.venv`):
+
+```
+python3 -m pytest tests/test_learning_governance.py -q --junit-xml=<scratch>/res.xml
+```
+Result: **80 passed, 0 failed, 0 errors, 0 skipped** (50 original + 30 new;
+verified via the XML, per this repo's guidance that the terminal summary
+line is unreliable here -- the terminal output again showed only a
+dot-progress line with no trailing "N passed" line).
+
+```
+python3 -m ruff check .
+```
+Result: **All checks passed** (one issue found and fixed during this round:
+a missing `AdapterQualificationResult` import in the test file, caught
+immediately by the first test run rather than by ruff).
+
+```
+python3 -m radon cc app/ -s -n D
+```
+Result: **no output** -- zero functions at rank D or higher. Full `-s`
+listing on both changed files: worst is `OfflineAdapterGate.qualify` at
+**C(12)** (up from B(10) pre-fix, from the added `missing_probe_ids`
+branch), everything else A or B.
+
+Full sibling regression check: `tests/test_learning_review.py` and
+`tests/test_reflection.py` (the two existing suites nearest this package's
+files, per `learning_governance.py`'s module docstring explaining why it
+does not reuse their names) re-run and still pass unchanged -- confirming
+this fix round, like the original delivery, never touched
+`app/cognitive/learning.py` or `app/cognitive/learning_review.py`.
+
+Mutation testing (nine mutations, each applied via a scripted in-place
+edit, tested, then reverted and diffed back to byte-identical with the
+pre-mutation file before the next):
+
+1. Recursive `proposed_value`/`rollback_value` key check disabled (only
+   `target_domain` checked) -> **7 of 80** failed.
+2. camelCase splitting and joined-phrase substring detection both disabled
+   -> **2 of 80** failed (exactly the `moodDecayRate`/`mooddecayrate`
+   parametrized cases; the brace/paren/comma/backslash cases are delimiter-
+   based, not camelCase/joined-based, and correctly kept passing).
+3. `activate()`'s pre-write re-check removed -> **2 of 80** failed (the two
+   post-approval-mutation-at-activate tests).
+4. `rollback()`'s pre-write re-check removed -> **1 of 80** failed.
+5. `activate()`'s `try/except` around `state_applier` removed (raw
+   exception propagates unwrapped) -> **1 of 80** failed
+   (`pytest.raises(LearningStateApplyError)` no longer matched).
+6. `qualify()`'s regression check reverted to the old intersection-only
+   logic -> **1 of 80** failed.
+7. `activate()`'s digest-vs-record comparison removed -> **2 of 80** failed
+   (both the prompt-digest and constitution-digest mismatch tests).
+8. `record()`'s non-finite rejection removed -> **3 of 80** failed.
+9. `rank()`'s stability filter removed -> **1 of 80** failed (the
+   noisy-oscillation-vs-steady-progress test).
+
+All nine were caught, each by exactly the test(s) written for that fix and
+no unrelated test, and every mutation was confirmed reverted (`diff` against
+the pre-mutation backup showed no output) before the next was applied. The
+full 80-test suite, `ruff check .`, and `radon cc app/ -s -n D` were then
+re-run clean one final time (see the verification block above, run last).
+
+ASCII purity: re-scanned all three changed files byte-by-byte after the fix
+round; no non-ASCII bytes found.
+
+**NOT done (fix round):** Codex's own Package A findings
+(`orchestration/PHASE_06/FIX_PLAN.md`'s Package A section -- the executor's
+dead fallback-cycle guard, the `simulate_plan` action-callback isolation
+gap, the false-positive verifier cycle, the self-referential fallback
+schema gap, and Package A's test-coverage gaps) are Codex's responsibility
+in `ai-friend-codex`, not addressed here. Wiring `LearningGovernor`/
+`OfflineAdapterGate` into a live agent process remains out of scope, as
+recorded in section 6 above -- unchanged by this fix round.
+
+---
+
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>

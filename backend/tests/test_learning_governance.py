@@ -18,10 +18,12 @@ from app.cognitive.learning_governance import (
     LearningProposal,
     LearningProposalStatus,
     LearningRiskClass,
+    LearningStateApplyError,
     check_targets_protected_domain,
 )
 from app.llm.adapter_gate import (
     AdapterQualificationRequest,
+    AdapterQualificationResult,
     OfflineAdapterGate,
     compute_constitution_digest,
     compute_prompt_digest,
@@ -211,6 +213,212 @@ def test_protected_target_cannot_be_approved_even_via_gate_directly():
 
 
 # ---------------------------------------------------------------------------
+# Fix round (P0-1, orchestration/PHASE_06/FIX_PLAN.md): the hard invariant
+# must catch a protected field smuggled into proposed_value/rollback_value
+# (not only named in target_domain), expanded delimiters (braces, parens,
+# commas, backslashes) and joined/camelCase spellings, and a proposal
+# mutated after it already passed submit/validate/approve honestly.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "proposed_value",
+    [
+        {"mood_decay_rate": 0.0},
+        {"nested": {"mood_decay_rate": 0.0}},
+        {"items": [{"baseline_valence": 0.9}]},
+    ],
+)
+def test_check_protected_domain_catches_protected_proposed_value_keys(proposed_value):
+    """A benign target_domain must not be a loophole for smuggling a
+    protected field into proposed_value at any nesting depth."""
+    protected, reason = check_targets_protected_domain(
+        "procedure.greeting_style", proposed_value
+    )
+    assert protected is True
+    assert reason
+
+
+def test_check_protected_domain_catches_protected_rollback_value_keys():
+    protected, reason = check_targets_protected_domain(
+        "procedure.greeting_style", {}, {"traits": ["gone"]}
+    )
+    assert protected is True
+    assert reason
+
+
+@pytest.mark.parametrize(
+    "target_domain",
+    [
+        "persona{mood_decay_rate}",
+        "persona(mood_decay_rate)",
+        "persona,mood_decay_rate",
+        "persona\\mood_decay_rate",
+        "moodDecayRate",
+        "mooddecayrate",
+    ],
+)
+def test_check_protected_domain_catches_expanded_delimiters_and_camel_case(target_domain):
+    protected, reason = check_targets_protected_domain(target_domain)
+    assert protected is True
+    assert reason
+
+
+def test_check_protected_domain_joined_match_does_not_false_positive_on_single_word():
+    """The joined-substring check is restricted to multi-word phrases so a
+    single common protected word (e.g. "name") does not false-positive
+    against an unrelated word that merely contains it as a substring."""
+    protected, _ = check_targets_protected_domain("user.nickname")
+    assert protected is False
+
+
+def test_submit_hard_rejects_protected_proposed_value_key():
+    governor = LearningGovernor()
+    proposal = make_proposal(
+        target_domain="procedure.greeting_style",
+        proposed_value={"mood_decay_rate": 0.0},
+    )
+    with pytest.raises(ValueError):
+        governor.submit(proposal)
+    assert governor.get(proposal.proposal_id) is None
+
+
+def test_activate_rejects_proposal_whose_target_domain_was_mutated_after_approval():
+    """A proposal that honestly named a benign target through submit and
+    approve, then had target_domain mutated afterward (LearningProposal is
+    not frozen), must be caught at the last checkpoint before activation --
+    never silently applied."""
+    applied: list[tuple[str, dict]] = []
+    governor = LearningGovernor(
+        state_applier=lambda domain, value: applied.append((domain, value))
+    )
+    proposal = make_proposal()
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+    assert proposal.status == LearningProposalStatus.APPROVED
+
+    proposal.target_domain = "persona.mood_decay_rate"
+    result = governor.activate(proposal.proposal_id)
+
+    assert result.status == LearningProposalStatus.REJECTED
+    assert applied == []
+
+
+def test_activate_rejects_proposal_whose_proposed_value_was_mutated_after_approval():
+    applied: list[tuple[str, dict]] = []
+    governor = LearningGovernor(
+        state_applier=lambda domain, value: applied.append((domain, value))
+    )
+    proposal = make_proposal()
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+
+    proposal.proposed_value = {"mood_decay_rate": 0.0}
+    result = governor.activate(proposal.proposal_id)
+
+    assert result.status == LearningProposalStatus.REJECTED
+    assert applied == []
+
+
+def test_rollback_refuses_and_preserves_activated_status_when_rollback_value_mutated():
+    """Unlike activate(), a protected mutation caught at rollback time must
+    not relabel the proposal REJECTED -- real state may already reflect the
+    ACTIVATED change -- so this raises and leaves status ACTIVATED instead."""
+    applied: list[tuple[str, dict]] = []
+    governor = LearningGovernor(
+        state_applier=lambda domain, value: applied.append((domain, value))
+    )
+    proposal = make_proposal()
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+    governor.activate(proposal.proposal_id)
+    applied.clear()
+
+    proposal.rollback_value = {"mood_decay_rate": 0.05}
+    with pytest.raises(ValueError):
+        governor.rollback(proposal.proposal_id)
+
+    assert governor.get(proposal.proposal_id).status == LearningProposalStatus.ACTIVATED
+    assert applied == []
+
+
+# ---------------------------------------------------------------------------
+# Fix round (P1-2): a failing state_applier must never leave proposal
+# status out of sync with whether the write actually happened.
+# ---------------------------------------------------------------------------
+
+
+def test_activate_raises_state_apply_error_and_leaves_status_approved():
+    def failing_applier(domain, value):
+        raise RuntimeError("simulated write failure")
+
+    governor = LearningGovernor(state_applier=failing_applier)
+    proposal = make_proposal()
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+
+    with pytest.raises(LearningStateApplyError):
+        governor.activate(proposal.proposal_id)
+
+    assert governor.get(proposal.proposal_id).status == LearningProposalStatus.APPROVED
+    assert proposal.activation_revision is None
+
+
+def test_rollback_raises_state_apply_error_and_leaves_status_activated():
+    calls = {"n": 0}
+
+    def flaky_applier(domain, value):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated write failure")
+
+    governor = LearningGovernor(state_applier=flaky_applier)
+    proposal = make_proposal()
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+    governor.activate(proposal.proposal_id)
+
+    with pytest.raises(LearningStateApplyError):
+        governor.rollback(proposal.proposal_id)
+
+    assert governor.get(proposal.proposal_id).status == LearningProposalStatus.ACTIVATED
+
+
+# ---------------------------------------------------------------------------
+# Fix round (P1-1): Section 21 training/eval provenance and post-activation
+# measurement, preserved through the lifecycle like every other field.
+# ---------------------------------------------------------------------------
+
+
+def test_proposal_carries_training_provenance_and_measurement_through_lifecycle():
+    governor = LearningGovernor()
+    proposal = make_proposal(
+        training_provenance={"eval_report": "evals/out/candidate.json"},
+    )
+    governor.submit(proposal)
+    governor.validate(proposal.proposal_id)
+    governor.approve(proposal.proposal_id)
+    governor.activate(proposal.proposal_id)
+    proposal.post_activation_measurement = {"pass_rate": 0.98}
+
+    stored = governor.get(proposal.proposal_id)
+    assert stored.training_provenance == {"eval_report": "evals/out/candidate.json"}
+    assert stored.post_activation_measurement == {"pass_rate": 0.98}
+    assert stored.status == LearningProposalStatus.ACTIVATED
+
+
+def test_proposal_provenance_and_measurement_default_to_none():
+    proposal = make_proposal()
+    assert proposal.training_provenance is None
+    assert proposal.post_activation_measurement is None
+
+
+# ---------------------------------------------------------------------------
 # Risk-tiered approval gating
 # ---------------------------------------------------------------------------
 
@@ -379,6 +587,40 @@ def test_curiosity_rejects_window_size_below_two():
         LearningProgressCuriosity(window_size=1)
 
 
+def test_curiosity_rejects_negative_stability_factor():
+    with pytest.raises(ValueError):
+        LearningProgressCuriosity(stability_factor=-1.0)
+
+
+@pytest.mark.parametrize("bad_error", [float("nan"), float("inf"), float("-inf")])
+def test_record_rejects_non_finite_error(bad_error):
+    """Fix round (P1-3): NaN/infinity are not empirical measurements -- a
+    NaN in particular would silently poison every downstream mean/delta
+    rather than raising anywhere near its actual source."""
+    curiosity = LearningProgressCuriosity(window_size=3)
+    with pytest.raises(ValueError):
+        curiosity.record("d", bad_error)
+
+
+def test_rank_excludes_high_variance_oscillation_even_with_large_raw_delta():
+    """Fix round (P1-3): peer review's exact adversarial example. A
+    window-3 sequence oscillating between 0 and 1 produces a large raw
+    two-window-mean delta (0.53) despite being pure noise, not a real
+    trend, and must rank below genuine steady progress rather than above
+    it."""
+    curiosity = LearningProgressCuriosity(window_size=3, noise_threshold=0.02)
+    _feed(curiosity, "noisy-oscillation", [1, 0, 1, 0.2, 0, 0.2])
+    _feed(curiosity, "steady-progress", [0.9, 0.85, 0.8, 0.5, 0.4, 0.3])
+
+    # The raw delta alone would have cleared the noise threshold -- proving
+    # this is genuinely testing the new stability filter, not a domain the
+    # old threshold-only check would have excluded anyway.
+    assert curiosity.progress_delta("noisy-oscillation") > curiosity.noise_threshold
+
+    ranked_domains = [domain for domain, _ in curiosity.rank()]
+    assert ranked_domains == ["steady-progress"]
+
+
 # ---------------------------------------------------------------------------
 # Offline adapter qualification and regression detection
 # ---------------------------------------------------------------------------
@@ -484,10 +726,10 @@ def test_qualify_fails_below_minimum_pass_rate():
 def test_activate_refuses_unqualified_result():
     gate = make_gate()
     request = make_request()
-    result = gate.qualify(request, {"p1": True}, {"p1": False}, "prompt-abc", "const-abc")
+    gate.qualify(request, {"p1": True}, {"p1": False}, "prompt-abc", "const-abc")
 
     with pytest.raises(ValueError):
-        gate.activate(request, result, "prompt-new", "const-new")
+        gate.activate(request.adapter_id, "prompt-abc", "const-abc")
     assert gate.active.version == "base-v1"
 
 
@@ -497,7 +739,7 @@ def test_activate_then_rollback_restores_incumbent_atomically():
     result = gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
     assert result.qualified is True
 
-    activated = gate.activate(request, result, "prompt-new", "const-new")
+    activated = gate.activate(request.adapter_id, "prompt-abc", "const-abc")
     assert activated.version == "candidate-v2"
     assert activated.rollback_pointer == "base-v1"
     assert gate.active.version == "candidate-v2"
@@ -516,12 +758,101 @@ def test_rollback_without_prior_activation_raises():
 def test_rollback_cannot_be_called_twice():
     gate = make_gate()
     request = make_request()
-    result = gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
-    gate.activate(request, result, "prompt-new", "const-new")
+    gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
+    gate.activate(request.adapter_id, "prompt-abc", "const-abc")
     gate.rollback()
 
     with pytest.raises(ValueError):
         gate.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Fix round (P0-2, orchestration/PHASE_06/FIX_PLAN.md): qualify() must fail
+# closed on incomplete baseline probe coverage, and activate() must trust
+# only its own internally registered qualification record -- never a
+# caller-supplied result or an unverified digest pair.
+# ---------------------------------------------------------------------------
+
+
+def test_qualify_fails_closed_on_missing_baseline_probe():
+    """A candidate that silently drops a formerly-passing probe from its
+    held-out run must not qualify: a missing result is not evidence of "no
+    regression," it is an absence of evidence."""
+    gate = make_gate()
+    request = make_request()
+    baseline = {"p1": True, "p2": True}
+    candidate = {"p1": True}  # p2 silently dropped, not merely failed
+
+    result = gate.qualify(request, baseline, candidate, "prompt-abc", "const-abc")
+
+    assert result.qualified is False
+    assert result.regression_detected is True
+    assert result.details["missing_probe_ids"] == ["p2"]
+
+
+def test_activate_refuses_mismatched_current_prompt_digest():
+    """A persona/prompt change between qualify() and activate() must block
+    activation rather than silently activating a now-stale qualification."""
+    gate = make_gate()
+    request = make_request()
+    result = gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
+    assert result.qualified is True
+
+    with pytest.raises(ValueError):
+        gate.activate(request.adapter_id, "prompt-changed", "const-abc")
+    assert gate.active.version == "base-v1"
+
+
+def test_activate_refuses_mismatched_current_constitution_digest():
+    gate = make_gate()
+    request = make_request()
+    result = gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
+    assert result.qualified is True
+
+    with pytest.raises(ValueError):
+        gate.activate(request.adapter_id, "prompt-abc", "const-changed")
+    assert gate.active.version == "base-v1"
+
+
+def test_activate_refuses_unregistered_adapter_id():
+    """There is no path to activation for an adapter qualify() never saw --
+    a caller cannot fabricate qualification by adapter id alone."""
+    gate = make_gate()
+    with pytest.raises(ValueError):
+        gate.activate("never-qualified", "prompt-abc", "const-abc")
+
+
+def test_activate_has_no_parameter_a_forged_result_could_reach():
+    """activate() no longer accepts a request/result at all: a caller
+    constructing a fabricated AdapterQualificationResult(qualified=True,
+    ...) has nothing to hand it to. Only the internally registered record,
+    written exclusively by qualify(), can ever drive activation."""
+    gate = make_gate()
+    forged = AdapterQualificationResult(
+        adapter_id="never-qualified",
+        qualified=True,
+        pass_rate=1.0,
+        regression_detected=False,
+    )
+    assert forged.qualified is True  # the forged object itself is well-formed...
+    with pytest.raises(ValueError):
+        # ...but activate() has no parameter that could ever receive it.
+        gate.activate(forged.adapter_id, "prompt-abc", "const-abc")
+
+
+def test_requalifying_the_same_adapter_replaces_its_registered_record():
+    """A second qualify() call for the same adapter_id must supersede the
+    first record, not accumulate stale qualified state alongside it."""
+    gate = make_gate()
+    request = make_request()
+    gate.qualify(request, {"p1": True}, {"p1": False}, "prompt-abc", "const-abc")
+    with pytest.raises(ValueError):
+        gate.activate(request.adapter_id, "prompt-abc", "const-abc")
+
+    result = gate.qualify(request, {"p1": True}, {"p1": True}, "prompt-abc", "const-abc")
+    assert result.qualified is True
+    activated = gate.activate(request.adapter_id, "prompt-abc", "const-abc")
+    assert activated.version == "candidate-v2"
 
 
 def test_compute_prompt_digest_is_stable_and_content_sensitive():
