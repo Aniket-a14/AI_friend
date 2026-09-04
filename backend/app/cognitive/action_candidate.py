@@ -51,7 +51,20 @@ def new_candidate_id() -> str:
     return f"cand-{uuid.uuid4().hex}"
 
 
-def _phrase_in_text(phrase: str, text: str) -> bool:
+import functools
+
+
+@functools.lru_cache(maxsize=1024)
+def _compile_word_boundary_pattern(phrase: str) -> re.Pattern[str]:
+    return re.compile(r"\b" + re.escape(phrase) + r"\b", re.IGNORECASE)
+
+
+def _phrase_in_text(
+    phrase: str,
+    text: str,
+    phrase_lower: str | None = None,
+    text_lower: str | None = None,
+) -> bool:
     """Whole-word, case-insensitive containment: `phrase` must appear in
     `text` bounded by word edges on both sides, not merely as a character
     run. Regex-escaped so a phrase containing punctuation is matched
@@ -65,8 +78,12 @@ def _phrase_in_text(phrase: str, text: str) -> bool:
     """
     if not phrase:
         return False
-    pattern = r"\b" + re.escape(phrase) + r"\b"
-    return re.search(pattern, text, re.IGNORECASE) is not None
+    p_lower = phrase_lower if phrase_lower is not None else phrase.lower()
+    t_lower = text_lower if text_lower is not None else text.lower()
+    # Substring pre-filter: a word-bounded phrase must first be a substring
+    if p_lower not in t_lower:
+        return False
+    return _compile_word_boundary_pattern(phrase).search(text) is not None
 
 
 def _claims_overlap(claim: str, forbidden: str) -> bool:
@@ -87,9 +104,14 @@ def _claims_overlap(claim: str, forbidden: str) -> bool:
     forbidden_n = forbidden.strip()
     if not claim_n or not forbidden_n:
         return False
-    if claim_n.lower() == forbidden_n.lower():
-        return True
-    return _phrase_in_text(claim_n, forbidden_n) or _phrase_in_text(forbidden_n, claim_n)
+    len_c = len(claim_n)
+    len_f = len(forbidden_n)
+    if len_c == len_f:
+        return claim_n.lower() == forbidden_n.lower()
+    elif len_c < len_f:
+        return _phrase_in_text(claim_n, forbidden_n)
+    else:
+        return _phrase_in_text(forbidden_n, claim_n)
 
 
 class CandidateSelector:
@@ -104,13 +126,39 @@ class CandidateSelector:
         regardless of how it would otherwise have scored."""
         if not forbidden_claims:
             return list(candidates)
+
+        norm_forbidden = [
+            (f.strip(), f.strip().lower(), len(f.strip()))
+            for f in forbidden_claims
+            if f.strip()
+        ]
+        if not norm_forbidden:
+            return list(candidates)
+
         survivors = []
         for candidate in candidates:
-            violated = any(
-                _claims_overlap(claim, forbidden)
-                for claim in candidate.constraint_claims
-                for forbidden in forbidden_claims
-            )
+            violated = False
+            for claim in candidate.constraint_claims:
+                c = claim.strip()
+                if not c:
+                    continue
+                cl = c.lower()
+                lc = len(c)
+                for f, fl, lf in norm_forbidden:
+                    if lc == lf:
+                        if cl == fl:
+                            violated = True
+                            break
+                    elif lc < lf:
+                        if _phrase_in_text(c, f, cl, fl):
+                            violated = True
+                            break
+                    else:
+                        if _phrase_in_text(f, c, fl, cl):
+                            violated = True
+                            break
+                if violated:
+                    break
             if not violated:
                 survivors.append(candidate)
         return survivors
