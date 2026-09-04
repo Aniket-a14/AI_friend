@@ -398,9 +398,8 @@ class DecisionService:
                 event, state_snapshot, self._immutable_core()
             )
             if deterministic_plan is not None:
-                event.intent = _DETERMINISTIC_PLAN_INTENTS.get(
-                    deterministic_plan.payload.get("category"), "ACKNOWLEDGE"
-                )
+                category = str(deterministic_plan.payload.get("category") or "")
+                event.intent = _DETERMINISTIC_PLAN_INTENTS.get(category, "ACKNOWLEDGE")
                 return deterministic_plan
 
         # 1. Hybrid Routing: Fast Path for Greetings
@@ -830,7 +829,7 @@ class DecisionService:
             )
             selected = behavior_decision.selected_candidate
             selected_kind = selected.get("kind") if selected else None
-            if selected_kind == "ASK":
+            if selected and selected_kind == "ASK":
                 # Fix round (Codex review B2): carry the selected kind into
                 # the *executable* plan, not only the ActionIntent trace --
                 # otherwise Stage 8 dispatches on action_type alone and an

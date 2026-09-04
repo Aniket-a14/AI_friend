@@ -580,6 +580,88 @@ class CognitivePipeline:
             behavior_decision=behavior_decision_payload,
         )
 
+    def _extract_event_and_session(
+        self, raw_event: dict[str, Any]
+    ) -> tuple[Any, dict[str, Any], SessionState]:
+        raw_event_type = raw_event.get("event_type") or raw_event.get("type")
+        event_metadata = raw_event.get("metadata", {})
+        if not isinstance(event_metadata, dict):
+            event_metadata = {}
+        session_state = SessionState.start_turn(
+            turn_id=event_metadata.get("turn_id"),
+            utterance_id=raw_event.get("utterance_id")
+            or event_metadata.get("utterance_id"),
+        )
+        event_metadata["session_state"] = session_state
+        return raw_event_type, event_metadata, session_state
+
+    def _setup_memory_activations(
+        self,
+        surfaced_memories: list[dict[str, Any]] | None,
+        memory_activations: list[MemoryActivation] | None,
+        event: Any,
+    ) -> list[MemoryActivation] | None:
+        activations = memory_activations
+        if Config.PHASE_02_MEMORY_TRUTH and activations is None:
+            activations = memories_to_activations(surfaced_memories)
+        if Config.PHASE_02_MEMORY_TRUTH and activations:
+            event.metadata["retrieval_degraded"] = any(
+                activation.outage_flag for activation in activations
+            )
+        return activations
+
+    def _build_decide_kwargs(
+        self,
+        memory_activations: list[MemoryActivation] | None,
+        state_snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        decide_kwargs: dict[str, Any] = {}
+        if Config.PHASE_02_MEMORY_TRUTH and self._decision_accepts_memory_activations():
+            decide_kwargs["memory_activations"] = memory_activations
+        if Config.PHASE_03_AFFECT_CONTROL and self._decision_accepts_global_controls():
+            decide_kwargs["global_controls"] = state_snapshot.get("global_controls")
+        return decide_kwargs
+
+    def _record_reappraisal_pre_response(
+        self, plan: Any, state_snapshot: dict[str, Any]
+    ) -> None:
+        if self.reappraisal:
+            self.reappraisal.record_pre_response_state(state_snapshot)
+            self.reappraisal.record_expected_outcome(
+                plan.goal, state_snapshot.get("mood", 0.0)
+            )
+
+    def _check_reflection_needed(
+        self,
+        event: Any,
+        raw_event: dict[str, Any],
+        state_directive: str,
+        appraisal_vector: Any,
+        state_snapshot: dict[str, Any],
+        full_response: str,
+    ) -> dict[str, Any] | None:
+        if event.intent in ["CHAT", "REMEMBER"] and full_response:
+            episode = self._build_consolidation_episode(
+                event,
+                raw_event,
+                state_directive,
+                appraisal_vector,
+                self.state,
+                state_snapshot,
+                full_response,
+            )
+            return {"type": "reflection_needed", "data": [episode]}
+        return None
+
+    def _emit_terminal_done_chunk(
+        self, done_chunk: dict[str, Any] | None, is_spec: bool
+    ) -> dict[str, Any]:
+        if done_chunk:
+            if is_spec:
+                done_chunk["speculative"] = True
+            return done_chunk
+        return {"type": "done", "data": "finished", "speculative": is_spec}
+
     async def execute(
         self,
         raw_event: dict[str, Any],
@@ -593,7 +675,7 @@ class CognitivePipeline:
         Yields events/chunks for the agent wrapper to handle.
 
         `percept` is the Phase 1 normalized `PerceptEnvelope` for this turn
-        (§7) and `workspace` is the current `CognitiveWorkspaceSnapshot` (§38,
+        (Section 7) and `workspace` is the current `CognitiveWorkspaceSnapshot` (Section 38,
         Codex's `app/state/workspace.py`) -- both optional and additive: a
         caller that predates them (this pipeline's existing production
         caller, `CognitiveService.process_event`) keeps working unchanged,
@@ -625,22 +707,9 @@ class CognitivePipeline:
 
         # 1. Extraction & Metadata
         t_start = time.perf_counter()
-        raw_event_type = raw_event.get("event_type") or raw_event.get("type")
-        event_metadata = raw_event.get("metadata", {})
-        if not isinstance(event_metadata, dict):
-            event_metadata = {}
-        # Phase 2B: one SessionState per turn, threaded through
-        # event_metadata for any stage that wants it. Speculative starts
-        # False here and is flipped in place below if VAP pre-generation
-        # fires -- keeping event_metadata["speculative"] (still the field
-        # today's behavior actually reads) and session_state.speculative in
-        # sync rather than picking one as authoritative.
-        session_state = SessionState.start_turn(
-            turn_id=event_metadata.get("turn_id"),
-            utterance_id=raw_event.get("utterance_id")
-            or event_metadata.get("utterance_id"),
+        raw_event_type, event_metadata, session_state = self._extract_event_and_session(
+            raw_event
         )
-        event_metadata["session_state"] = session_state
         stage_times["stage_1_extraction_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # VAP Turn Planning / Speculative Pre-Generation
@@ -678,26 +747,11 @@ class CognitivePipeline:
         event.metadata["session_state"] = session_state
         if event_metadata.get("speculative"):
             event.metadata["speculative"] = True
-        # Fix round (Codex review B1 - blocker): a production caller (the
-        # real CognitiveService.process_event() path) supplies
-        # surfaced_memories, not memory_activations -- without this adapter
-        # step, memory_activations stayed None on every real turn and the
-        # ASK/outage branches below were reachable only from a hand-built
-        # test argument, never from the application's own memory path. A
-        # caller that explicitly passes memory_activations (a future real
-        # retrieval integration, or a direct test) is never overridden here.
-        if Config.PHASE_02_MEMORY_TRUTH and memory_activations is None:
-            memory_activations = memories_to_activations(surfaced_memories)
+        memory_activations = self._setup_memory_activations(
+            surfaced_memories, memory_activations, event
+        )
 
-        # Phase 02 Package B: only written when the flag is on and there is
-        # something to report -- an untouched key when memory_activations is
-        # empty/None keeps this a strict no-op for every Phase 1 caller.
-        if Config.PHASE_02_MEMORY_TRUTH and memory_activations:
-            event.metadata["retrieval_degraded"] = any(
-                activation.outage_flag for activation in memory_activations
-            )
-
-        # 4. Appraisal (§1 — OCC/Lazarus/EMA)
+        # 4. Appraisal (Section 1 -- OCC/Lazarus/EMA)
         t_start = time.perf_counter()
         state_snapshot = self.state.get_context_snapshot()
         emotional_bias = state_snapshot.get("mood", 0.0)
@@ -707,14 +761,13 @@ class CognitivePipeline:
             event_type=event.event_type,
             emotional_bias=emotional_bias,
             state_snapshot=state_snapshot,
-            # personality.json has no top-level "boundaries" key; the real source is immutable_core.
             identity_boundaries=self.identity.immutable_core["boundaries"],
             user_voice_properties=user_voice_properties,
         )
         stage_times["stage_4_appraisal_ms"] = (time.perf_counter() - t_start) * 1000.0
         yield {"type": "appraisal", "data": appraisal_vector}
 
-        # 5. State Update via Appraisal (§2.3 — ALMA mood-pull)
+        # 5. State Update via Appraisal (Section 2.3 -- ALMA mood-pull)
         state_update_result: dict[str, Any] = {}
         async for chunk in self._update_state_from_appraisal(
             event,
@@ -735,30 +788,10 @@ class CognitivePipeline:
             event.metadata["surfaced_memories"] = surfaced_memories
         event.metadata["appraisal"] = appraisal_vector.to_dict()
 
-        # Fix round (Codex review B8): calling with a keyword unconditionally
-        # broke any injected DecisionService-compatible implementation or
-        # test double whose decide() predates that parameter -- a TypeError
-        # at the dependency-injection seam, not a behavior change. PLAN.md
-        # section 5 requires legacy behavior fully preserved while a flag is
-        # off; both checks also cover a flag-on decision object that simply
-        # has not been updated yet, rather than assuming every injected
-        # decision service is the concrete DecisionService. Phase 03 Package
-        # B adds the second kwarg the same way Phase 02 Package B added the
-        # first, so a decision double supporting only one of the two keeps
-        # working with just that one threaded through.
-        decide_kwargs: dict[str, Any] = {}
-        if Config.PHASE_02_MEMORY_TRUTH and self._decision_accepts_memory_activations():
-            decide_kwargs["memory_activations"] = memory_activations
-        if Config.PHASE_03_AFFECT_CONTROL and self._decision_accepts_global_controls():
-            decide_kwargs["global_controls"] = state_snapshot.get("global_controls")
-
+        decide_kwargs = self._build_decide_kwargs(memory_activations, state_snapshot)
         plan = await self.decision.decide(event, state_snapshot, **decide_kwargs)
 
-        if self.reappraisal:
-            self.reappraisal.record_pre_response_state(state_snapshot)
-            self.reappraisal.record_expected_outcome(
-                plan.goal, state_snapshot.get("mood", 0.0)
-            )
+        self._record_reappraisal_pre_response(plan, state_snapshot)
 
         # Post-Decision ToM Application: ingest LLM-inferred parameters to state
         tom_result: dict[str, Any] = {}
@@ -768,9 +801,7 @@ class CognitivePipeline:
             yield chunk
         state_snapshot = tom_result["state_snapshot"]
 
-        # 6b. Explicit ActionIntent commitment (§22, §38) -- before Stage 8
-        # generates anything, so the eventual outcome always has a
-        # committed-at-decision-time record to attribute back to.
+        # 6b. Explicit ActionIntent commitment (Sections 22, 38)
         action_intent = self._commit_action_intent(
             plan, session_state, workspace, percept
         )
@@ -810,31 +841,25 @@ class CognitivePipeline:
         done_chunk = validation_result["done_chunk"]
         stage_times["stage_9_validation_ms"] = (time.perf_counter() - t_start) * 1000.0
 
-        # 10. Learning + Episodic Memory (§6.1)
+        # 10. Learning + Episodic Memory (Section 6.1)
         t_start = time.perf_counter()
-        if event.intent in ["CHAT", "REMEMBER"] and full_response:
-            episode = self._build_consolidation_episode(
-                event,
-                raw_event,
-                state_directive,
-                appraisal_vector,
-                self.state,
-                state_snapshot,
-                full_response,
-            )
-            yield {"type": "reflection_needed", "data": [episode]}
+        reflection_event = self._check_reflection_needed(
+            event,
+            raw_event,
+            state_directive,
+            appraisal_vector,
+            state_snapshot,
+            full_response,
+        )
+        if reflection_event is not None:
+            yield reflection_event
         stage_times["stage_10_learning_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # Yield gathered stage telemetry
         yield {"type": "pipeline_telemetry", "data": stage_times}
 
         # Yield the saved done chunk at the very end
-        if done_chunk:
-            if is_spec:
-                done_chunk["speculative"] = True
-            yield done_chunk
-        else:
-            yield {"type": "done", "data": "finished", "speculative": is_spec}
+        yield self._emit_terminal_done_chunk(done_chunk, is_spec)
 
     async def _stream_action_pass(self, plan, is_spec: bool, result: dict):
         """Run one generation pass, yielding what the transport should see.

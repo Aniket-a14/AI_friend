@@ -451,9 +451,8 @@ async def run_bm_gpu_p3_02(client: OllamaClient) -> dict[str, Any]:
                 current_arousal += 0.25 * (baseline_arousal - current_arousal)
 
             # Check mean reversion on turns following distress
-            if turn in (7, 14):
-                if current_mood < -0.3 or current_arousal > 0.65:
-                    reversion_verified = False
+            if turn in (7, 14) and (current_mood < -0.3 or current_arousal > 0.65):
+                reversion_verified = False
 
             # Advance workspace CAS state
             cmd = WorkspaceCommand(
