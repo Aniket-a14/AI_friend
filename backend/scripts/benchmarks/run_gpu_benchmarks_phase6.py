@@ -218,6 +218,7 @@ async def run_bm_gpu_p6_02(
         base_model_tag=model_tag,
         held_out_eval_file="evals/out/held_out_alpha.json",
         prompt_digest="sha256_prompt_v1",
+        metadata={"constitution_digest": "sha256_constitution_v1"},
     )
     res_a = gate.qualify(
         request=req_a,
@@ -233,6 +234,7 @@ async def run_bm_gpu_p6_02(
         base_model_tag=model_tag,
         held_out_eval_file="evals/out/held_out_beta.json",
         prompt_digest="sha256_prompt_v1",
+        metadata={"constitution_digest": "sha256_constitution_v1"},
     )
     res_b = gate.qualify(
         request=req_b,
