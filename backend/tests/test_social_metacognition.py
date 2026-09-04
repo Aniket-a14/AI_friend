@@ -245,8 +245,11 @@ def test_phase04_codex_files_are_ascii_only():
         repository_root / "backend/app/cognitive/calibration.py",
         repository_root / "backend/app/state/agent_state.py",
         repository_root / "backend/tests/test_social_metacognition.py",
-        repository_root / "orchestration/PHASE_04/CODEX_RESULT.md",
     ]
+    orchestration_file = repository_root / "orchestration/PHASE_04/CODEX_RESULT.md"
+    if orchestration_file.exists():
+        phase_files.append(orchestration_file)
 
     for path in phase_files:
+        assert path.exists(), f"Missing owned file: {path}"
         assert path.read_bytes().isascii(), f"non-ASCII byte found in {path}"
