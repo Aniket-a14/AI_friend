@@ -16441,3 +16441,107 @@ cancellation after dispatcher timeout.
 - Empirical results documented in `orchestration/PHASE_05/BENCHMARK_RESULTS.md`.
 
 **NOT done:** Live hardware actuator integrations, real multi-channel microphone array beamforming, and Phase 06 (Optional advanced learning and planning) have not started.
+
+## 2026-09-04 -- Codex Phase 06 Package A: verified planning and episodic simulation
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Added typed, bounded plan artifacts; deterministic verification rejects
+  over-budget plans, causal and fallback cycles, unfulfilled initial or step
+  preconditions, broken invariants, invalid effects, and terminal failures.
+- Added detached deterministic execution with bounded retries, atomic step
+  effect rollback, and explicit fallback transition traces.
+- Added prospective policy and plan rollouts over deep-copied workspace maps.
+  Every emitted simulated percept, action, and outcome is tagged
+  `is_simulation=True`; tagged records are rejected before a production memory
+  or state commit callback can execute.
+
+Verification:
+
+- Focused suite: 10 tests passed, with zero failures or errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no D, E, or F functions.
+- New files were checked as pure 7-bit ASCII and `git diff --check` passed.
+- Mutating the simulation tag to `False` caused the dedicated quarantine test
+  to fail; the correct `True` tag was restored.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
+
+## 2026-09-04 -- Codex Phase 06 Package A peer-review fix round
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Fallback chain cycle detection runs before completed-step handling, so
+  attempted fallback cycles fail closed with an execution error.
+- Action callbacks receive `PlanExecutionContext`; prospective callbacks see
+  `is_simulation=True` and are documented as pure and side-effect-free.
+- Simulations now fail closed for invalid plans and expose explicit success and
+  error fields for invalid or failed executions.
+- Causal producer discovery prefers declared preceding producers, avoiding
+  false cycles from later redundant effects. DELETE cannot establish NOT_EQUAL
+  because missing values do not satisfy that predicate.
+- Plan artifacts reject self-referential fallback steps.
+
+Verification:
+
+- Focused suite: 20 passed, zero failures, and zero errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` passed with no D, E, or F functions.
+- Mutation check: disabling the fallback-cycle guard failed the dedicated
+  fallback-cycle regression; the correct guard was restored.
+- Changed Phase 06 code and documentation passed 7-bit ASCII and diff checks.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
+
+### 2026-09-04 -- Orchestrator (Antigravity) -- Phase 06 Integrated, Benchmarked & Phase Gate PASSED (Humanoid Brain Architecture Complete)
+
+- Merged `codex/phase-06` (Package A) and `claude/phase-06` (Package B) into `integration/phase-06` at commit `26a5c60` and benchmarked at `34ef967`.
+- Package A delivered structured planning and sandboxed episodic simulation in `backend/app/`:
+  - `PlanArtifact`, `PlanStep`, `PlanPrecondition`, `PlanEffect`, `PlanInvariant` (`backend/app/cognitive/planning.py`) formalizing structured deliberative planning schemas with typed pre/postconditions, effect types (SET, INCREMENT, APPEND, DELETE), fallback chains, and execution budgets.
+  - `DeterministicPlanVerifier`: sound acyclicity verification, step reachability, precondition satisfiability, invariant preservation, and max-step budget enforcement with 0% false acceptance on malformed/cyclic plans.
+  - `DeterministicPlanExecutor`: detached deterministic execution with bounded retries, atomic step effect rollback upon failure, and explicit fallback transition traces.
+  - `EpisodicSimulator` (`backend/app/cognitive/simulation.py`): prospective plan and policy rollouts over deep-copied workspace state, pure side-effect-free execution, and strict simulation quarantine enforcement tagging all outputs with `is_simulation=True` and raising `SimulationQuarantineViolationError` on live state or memory commit attempts.
+- Package B delivered trusted learning governance and offline adapter gate in `backend/app/`:
+  - `LearningProposal` lifecycle (`backend/app/cognitive/learning_governance.py`) per Section 21: source records, target domain, proposed value, expected effect, risk class, counterfactual baseline, rollback value, training provenance, and proposal status.
+  - `LearningGovernor` and `LearningApprovalGate`: deep recursive inspection preventing modifications to `IMMUTABLE_CORE` or constitutional bounds; risk-tiered approval policy (LOW autonomous, MEDIUM/HIGH gatekeeper, CRITICAL blocked); pre-activation and post-rollback invariant checks; and 1-step atomic rollback restoring previous state with 100% bit-for-bit fidelity.
+  - `LearningProgressCuriosity`: computes empirical learning progress delta over sliding windows, scoring learnable novelty above flat noise or mastered routine.
+  - `OfflineAdapterGate` (`backend/app/llm/adapter_gate.py`): held-out probe regression verification, system prompt and constitutional digest verification, snapshot and atomic rollback, and unforgeable qualification records required for adapter activation.
+- Full suite verification:
+  - **2,332 passed, 0 failures, 0 errors, 0 skipped** across the entire backend in 59.83s.
+  - Ruff: clean across the entire repository.
+  - Radon: 0 functions at rank D or higher (`radon cc app -s -n D` exits with code 0).
+  - ASCII purity: 100% pure 7-bit ASCII verified across all Phase 06 files.
+- Benchmark verification (all 6 benchmarks passed):
+  - **BM-LOC-P6-01** (Deterministic Plan Verifier Latency & Soundness): 1,000 iterations; mean = 3.830 us, p95 = 4.417 us, soundness rate = 100.0% (threshold < 50.0 us, 100%) -> **PASS**.
+  - **BM-LOC-P6-02** (Episodic Simulation Sandbox Quarantine): 1,000 iterations; mean = 6.728 us, p95 = 6.959 us, quarantine block rate = 100.0%, state leakage = 0.0% (threshold < 20.0 us, 100%, 0%) -> **PASS**.
+  - **BM-LOC-P6-03** (Learning Governance Gate & Rollback Latency): 1,000 iterations; mean = 46.605 us, p95 = 59.792 us, immutable rejection rate = 100.0%, rollback fidelity = 100.0% (threshold < 50.0 us, 100%, 100%) -> **PASS**.
+  - **BM-LOC-P6-04** (Learning-Progress Curiosity Signal Computation): 1,000 iterations; mean = 3.017 us, p95 = 3.084 us, ranking accuracy = 100.0% (threshold < 10.0 us, 100%) -> **PASS**.
+  - **BM-GPU-P6-01** (Deliberative Planning Overhead & State Continuity on RTX 2060 Super `qwen2.5:3b`): 10 planning turns; mean TTFT = **27.06 ms** (threshold < 80.0 ms), p95 TTFT = **36.20 ms**, authoritative state continuity = **100% INTACT** -> **PASS**.
+  - **BM-GPU-P6-02** (Offline Adapter Qualification and Behavioral Regression Check on RTX 2060 Super `qwen2.5:3b`): qualification duration = **0.08 ms** (threshold < 50.0 ms), Candidate A qualified, Candidate B rejected, unqualified activation strictly blocked -> **PASS**.
+- Evaluated all 10 criteria in `ACCEPTANCE_CRITERIA.md`: 100% passed.
+- Issued formal Phase Gate verdict **`PASS`** in `orchestration/PHASE_06/PHASE_GATE.md`.
+- Empirical results documented in `orchestration/PHASE_06/BENCHMARK_RESULTS.md`.
+
+**NOT done:** Live online LoRA gradient fine-tuning in production inference loops (deliberately kept offline via `OfflineAdapterGate`), real physical robot joint actuation, and autonomous unverified modifications to immutable core identity.
+
+All 6 phases of the Humanoid Brain Architecture (`FINAL_HUMANOID_BRAIN_ARCHITECTURE.md`) are now successfully integrated, verified, and complete.
