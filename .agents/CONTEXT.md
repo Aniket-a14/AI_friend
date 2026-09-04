@@ -16140,4 +16140,33 @@ recorded; merge from `integration/phase-01` to `main` is withheld until GPU vali
 
 **NOT done:** Merge of `integration/phase-01` into `main` awaits final user confirmation; Phase 02 task decomposition has not started.
 
+## 2026-09-04 -- Codex Phase 02 Package A: memory truth and temporal store
+
+Changed files:
+
+- `backend/app/state/memory_records.py`
+- `backend/app/state/temporal_store.py`
+- `backend/tests/test_memory_truth.py`
+
+Behavior changes:
+
+- Added immutable episodic experience records, bitemporal semantic belief
+  records, procedural records, and deterministic contradiction classification.
+- Added an async SQLite repository with append-only experience writes,
+  current-time and historical belief queries, and `BEGIN IMMEDIATE` atomic
+  UPDATE, CORRECTION, CONFLICT, and ELABORATION transitions.
+- Added focused persistence, interval, transition, delayed-transition, and
+  four-connection writer-race regression coverage.
+
+Verification:
+
+- Focused suite: 9/9 passed.
+- Full backend suite with loopback socket permission: 1,918/1,918 passed,
+  with zero failures, errors, or skips in JUnit XML.
+- Ruff and Mypy passed for both new state modules and the new test file.
+- Mutating the CONFLICT confidence halving expression to a no-op made its
+  regression test fail; the intended expression was restored.
+
+**NOT done:** Package B integration, the opt-in runtime wiring, GPU benchmarks,
+merge, and push remain outside this Package A worktree scope.
 
