@@ -204,7 +204,12 @@ async def run_bm_gpu_p6_02(
     candidate_b_eval: dict[str, bool] = {pid: True for pid, _, _ in held_out_probes}
     candidate_b_eval["probe_01"] = False  # Regression on safety probe!
 
-    gate = OfflineAdapterGate()
+    gate = OfflineAdapterGate(
+        incumbent_adapter_id="native",
+        incumbent_base_model_tag=model_tag,
+        incumbent_prompt_digest="sha256_prompt_v1",
+        incumbent_constitution_digest="sha256_constitution_v1",
+    )
     t0 = time.perf_counter()
 
     # Qualify Candidate A
@@ -214,7 +219,13 @@ async def run_bm_gpu_p6_02(
         held_out_eval_file="evals/out/held_out_alpha.json",
         prompt_digest="sha256_prompt_v1",
     )
-    res_a = gate.qualify(req_a, candidate_eval=candidate_a_eval, baseline_eval=baseline_eval)
+    res_a = gate.qualify(
+        request=req_a,
+        baseline_results=baseline_eval,
+        candidate_results=candidate_a_eval,
+        target_prompt_digest="sha256_prompt_v1",
+        target_constitution_digest="sha256_constitution_v1",
+    )
 
     # Qualify Candidate B (must be rejected)
     req_b = AdapterQualificationRequest(
@@ -223,7 +234,13 @@ async def run_bm_gpu_p6_02(
         held_out_eval_file="evals/out/held_out_beta.json",
         prompt_digest="sha256_prompt_v1",
     )
-    res_b = gate.qualify(req_b, candidate_eval=candidate_b_eval, baseline_eval=baseline_eval)
+    res_b = gate.qualify(
+        request=req_b,
+        baseline_results=baseline_eval,
+        candidate_results=candidate_b_eval,
+        target_prompt_digest="sha256_prompt_v1",
+        target_constitution_digest="sha256_constitution_v1",
+    )
 
     t1 = time.perf_counter()
     qualification_duration_ms = (t1 - t0) * 1000.0
@@ -233,23 +250,23 @@ async def run_bm_gpu_p6_02(
     candidate_b_rejected = (not res_b.qualified) and res_b.regression_detected
 
     # Test activation & rollback on Candidate A
-    active_adapter = gate.activate(
-        res_a,
-        target_prompt_digest="sha256_prompt_v1",
-        target_constitution_digest=res_a.details["target_constitution_digest"],
+    active_rec = gate.activate(
+        adapter_id="lora_adapter_alpha",
+        current_prompt_digest="sha256_prompt_v1",
+        current_constitution_digest="sha256_constitution_v1",
     )
-    assert active_adapter == "lora_adapter_alpha"
+    assert active_rec.version == "lora_adapter_alpha"
 
-    rolled_back = gate.rollback()
-    assert rolled_back == "native"
+    rolled_back_rec = gate.rollback()
+    assert rolled_back_rec.version == "native"
 
     # Verify Candidate B cannot be activated
     activation_blocked = False
     try:
         gate.activate(
-            res_b,
-            target_prompt_digest="sha256_prompt_v1",
-            target_constitution_digest=res_b.details.get("target_constitution_digest", ""),
+            adapter_id="lora_adapter_beta",
+            current_prompt_digest="sha256_prompt_v1",
+            current_constitution_digest="sha256_constitution_v1",
         )
     except ValueError:
         activation_blocked = True
