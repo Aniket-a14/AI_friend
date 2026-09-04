@@ -10,6 +10,7 @@ from ..contracts import StateUpdate
 from ..persona.policy import PersonaPolicy
 from ..state.session_state import SessionState, persist_session_state
 from .action_intent import ActionIntent, ActionKind, build_action_intent
+from .background_scheduler import BackgroundScheduler
 from .behavior_contracts import BehaviorDecision
 from .memory_activation import MemoryActivation, memories_to_activations
 from .percept import PerceptEnvelope
@@ -84,6 +85,7 @@ class CognitivePipeline:
         llm_service=None,
         reappraisal=None,
         session_store=None,
+        scheduler: "BackgroundScheduler | None" = None,
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -100,6 +102,24 @@ class CognitivePipeline:
         # (most unit tests) just skips session persistence, same reasoning as
         # `if self.reappraisal:` elsewhere in this class.
         self.session_store = session_store
+        # Phase 04 Package B: the background scheduler this turn must
+        # preempt. Optional and additive, same reasoning as every other
+        # service on this class -- a pipeline built without one (every
+        # pre-Phase-04 caller) just never calls preempt/resume.
+        self.scheduler = scheduler
+
+    def _maybe_preempt_background(self) -> None:
+        """Immediately abort any in-flight background job -- a foreground
+        turn always wins (Architecture Section 19). Called once at the top
+        of every `execute()`, before any other stage."""
+        if self.scheduler is not None:
+            self.scheduler.preempt()
+
+    def _maybe_resume_background(self) -> None:
+        """Allow background work to run again once this turn is done, on
+        every exit path of `execute()` (including its early returns)."""
+        if self.scheduler is not None:
+            self.scheduler.resume_foreground_idle()
 
     async def _resolve_turn_conflict(
         self,
@@ -166,7 +186,7 @@ class CognitivePipeline:
                             "reason": "conflict_rejected",
                             "perception_text": speculative_intent.get("text", ""),
                             "utterance_id": speculative_intent.get("utterance_id"),
-                            # Phase 2D (§15 item 8): mirrors audio.stop's
+                            # Phase 2D (Section 15 item 8): mirrors audio.stop's
                             # existing turn_id stamp below -- makes resume
                             # turn-scoped symmetrically with stop.
                             "turn_id": turn_id,
@@ -548,7 +568,7 @@ class CognitivePipeline:
         percept: PerceptEnvelope | None,
     ) -> ActionIntent:
         """Stage 6: the typed commitment made before Stage 8 generates
-        anything (§22, §38) -- always produced, so every turn cites exactly
+        anything (Sections 22, 38) -- always produced, so every turn cites exactly
         one `(epoch, revision)` tuple (AC-01), not only turns whose BT branch
         happened to attach a `BehaviorDecision`.
 
@@ -703,6 +723,13 @@ class CognitivePipeline:
         """
         import time
 
+        # Phase 04 Package B: a foreground turn always preempts any
+        # in-flight background job (Architecture Section 19) -- called
+        # before any other stage so nothing here can race a background
+        # write. `_maybe_resume_background` is called on every exit path
+        # below, including both early returns.
+        self._maybe_preempt_background()
+
         stage_times: dict[str, Any] = {}
 
         # 1. Extraction & Metadata
@@ -717,6 +744,7 @@ class CognitivePipeline:
             raw_event, raw_event_type, event_metadata, session_state
         )
         if should_abort:
+            self._maybe_resume_background()
             return
         if vap_signal is not None:
             yield vap_signal
@@ -735,6 +763,7 @@ class CognitivePipeline:
         if conflict_result["stop"]:
             await persist_session_state(self.session_store, session_state)
             yield {"type": "pipeline_telemetry", "data": stage_times}
+            self._maybe_resume_background()
             return
         await persist_session_state(self.session_store, session_state)
 
@@ -860,6 +889,7 @@ class CognitivePipeline:
 
         # Yield the saved done chunk at the very end
         yield self._emit_terminal_done_chunk(done_chunk, is_spec)
+        self._maybe_resume_background()
 
     async def _stream_action_pass(self, plan, is_spec: bool, result: dict):
         """Run one generation pass, yielding what the transport should see.
@@ -871,7 +901,7 @@ class CognitivePipeline:
         them. Nothing downstream reported it, because a missing key just reads
         as "not speculative".
 
-        Accumulated output goes into `result` rather than a return value —
+        Accumulated output goes into `result` rather than a return value --
         this is an async generator, so it cannot both yield chunks and hand
         back the assembled response.
         """

@@ -1,16 +1,17 @@
 """
-Decision Layer — MAUT + Intent Persistence (psychological_layer.md §3).
+Decision Layer -- MAUT + Intent Persistence (psychological_layer.md Section 3).
 
 Intent selection uses Multi-Attribute Utility Theory (Keeney & Raiffa, 1976):
-    U(Intent) = w₁·GoalAlignment + w₂·EmotionalFit + w₃·IdentityAlignment + w₄·ContextRelevance
+    U(Intent) = w1*GoalAlignment + w2*EmotionalFit + w3*IdentityAlignment + w4*ContextRelevance
 
-Intent persistence uses temporal smoothing (§3.2):
-    Intent_t = (1 − ρ) · Intent_{t−1} + ρ · Intent_new
-    With context gating: if ContextShift > θ → hard reset
+Intent persistence uses temporal smoothing (Section 3.2):
+    Intent_t = (1 - rho) * Intent_{t-1} + rho * Intent_new
+    With context gating: if ContextShift > theta -> hard reset
 """
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -250,7 +251,7 @@ class DecisionService:
         self._identity_manager = identity_manager
         self.root = self._build_bt()
 
-        # MAUT Weights (§3.1)
+        # MAUT Weights (Section 3.1)
         self.w_goal = Config.MAUT_W_GOAL
         self.w_emotion = Config.MAUT_W_EMOTION
         self.w_identity = Config.MAUT_W_IDENTITY
@@ -270,9 +271,9 @@ class DecisionService:
         # only exercised when Config.PHASE_02_MEMORY_TRUTH is True.
         self._candidate_selector = CandidateSelector()
 
-        # Intent Persistence (§3.2)
-        self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # ρ
-        self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # θ_shift
+        # Intent Persistence (Section 3.2)
+        self.persistence_rate = Config.INTENT_PERSISTENCE_RATE  # rho
+        self.shift_threshold = Config.CONTEXT_SHIFT_THRESHOLD  # theta_shift
         self._previous_goal: str | None = None
         self._goal_scores: dict[str, float] = {g: 0.0 for g in GOALS}
         self.intent_classifier = get_intent_classifier(self)
@@ -377,6 +378,8 @@ class DecisionService:
         state_snapshot: dict[str, Any],
         memory_activations: list[MemoryActivation] | None = None,
         global_controls: Any | None = None,
+        metacognitive_directive: str = "PROCEED",
+        privacy_filter: Callable[[ActionCandidate], bool] | None = None,
     ) -> ActionPlan:
         """Main decision loop with MAUT scoring and intent persistence.
 
@@ -391,6 +394,13 @@ class DecisionService:
         CONTROL is True (see `_select_action_candidate`), and `state_
         snapshot` (already a required parameter here) doubles as the
         acute-distress signal for regulation-candidate generation.
+
+        `metacognitive_directive` and `privacy_filter` (Phase 04 Package B)
+        reach `CandidateSelector.score_and_select` unconditionally, gated
+        only by the same PHASE_02/PHASE_03 flag check that already governs
+        whether candidate selection runs at all -- their defaults
+        ("PROCEED", None) reproduce exact prior scoring for every caller
+        that omits them.
         """
         # 0. Deterministic short-circuit -- zero LLM calls, before classification.
         if event.event_type == "USER_MESSAGE":
@@ -410,7 +420,7 @@ class DecisionService:
         elif event.event_type == "USER_MESSAGE":
             await self.intent_classifier.classify(event, state_snapshot)
 
-        # 2. MAUT Goal Scoring (§3.1) — replaces raw keyword goal
+        # 2. MAUT Goal Scoring (Section 3.1) -- replaces raw keyword goal
         appraisal = event.metadata.get("appraisal", {})
         if appraisal and event.intent == "CHAT":
             maut_goal = self._score_goals_maut(
@@ -432,6 +442,8 @@ class DecisionService:
             "plan": None,
             "memory_activations": memory_activations or [],
             "global_controls": global_controls,
+            "metacognitive_directive": metacognitive_directive,
+            "privacy_filter": privacy_filter,
         }
         status = await self.root.tick(blackboard)
 
@@ -455,8 +467,8 @@ class DecisionService:
         event_metadata: dict[str, Any] | None = None,
     ) -> str:
         """
-        Multi-Attribute Utility Theory (§3.1).
-        Scores each goal and applies temporal persistence (§3.2).
+        Multi-Attribute Utility Theory (Section 3.1).
+        Scores each goal and applies temporal persistence (Section 3.2).
         Includes dynamic ACT-R Goal Utility Reinforcement Learning updates.
         """
         V = state.get("mood", 0.0)
@@ -501,7 +513,7 @@ class DecisionService:
             + self.goal_utilities["ENGAGE"]
         )
 
-        # COMFORT: Best when user seems distressed — favored at low arousal (calm tone)
+        # COMFORT: Best when user seems distressed -- favored at low arousal (calm tone)
         scores["COMFORT"] = (
             self.w_goal * max(0, -G + 0.5)
             + self.w_emotion * max(0, -V + 0.5) * (1.2 - Ar * 0.4)
@@ -510,7 +522,7 @@ class DecisionService:
             + self.goal_utilities["COMFORT"]
         )
 
-        # INFORM: Best for high relevance, novel content — arousal-neutral
+        # INFORM: Best for high relevance, novel content -- arousal-neutral
         scores["INFORM"] = (
             self.w_goal * max(0, G * 0.5 + 0.3)
             + self.w_emotion * (0.4 + Ar * 0.2)
@@ -528,7 +540,7 @@ class DecisionService:
             + self.goal_utilities["TEASE"]
         )
 
-        # PROTECT: When norm alignment is low — arousal-neutral (boundary enforcement)
+        # PROTECT: When norm alignment is low -- arousal-neutral (boundary enforcement)
         scores["PROTECT"] = (
             self.w_goal * 0.2
             + self.w_emotion * (0.2 + Ar * 0.1)
@@ -537,7 +549,7 @@ class DecisionService:
             + self.goal_utilities["PROTECT"]
         )
 
-        # §3.2: Intent Persistence with Context Gating
+        # Section 3.2: Intent Persistence with Context Gating
         new_goal = max(scores, key=lambda g: scores[g])
         context_shift = N  # Novelty serves as a proxy for context shift
 
@@ -549,7 +561,7 @@ class DecisionService:
                 scores[g] = (1 - rho) * prev_score + rho * scores[g]
             new_goal = max(scores, key=lambda g: scores[g])
             logger.debug(
-                "[Decision] Persistence applied (shift=%.2f < θ=%.2f): %s → %s",
+                "[Decision] Persistence applied (shift=%.2f < theta=%.2f): %s -> %s",
                 context_shift,
                 self.shift_threshold,
                 self._previous_goal,
@@ -558,7 +570,7 @@ class DecisionService:
         else:
             if self._previous_goal:
                 logger.debug(
-                    "[Decision] Context shift detected (%.2f ≥ θ=%.2f): hard reset to %s",
+                    "[Decision] Context shift detected (%.2f >= theta=%.2f): hard reset to %s",
                     context_shift,
                     self.shift_threshold,
                     new_goal,
@@ -568,7 +580,7 @@ class DecisionService:
         self._goal_scores = scores
 
         logger.info(
-            "[Decision] MAUT scores: %s → selected: %s",
+            "[Decision] MAUT scores: %s -> selected: %s",
             {g: f"{s:.3f}" for g, s in scores.items()},
             new_goal,
         )
@@ -826,6 +838,10 @@ class DecisionService:
                 event.raw_content,
                 state_snapshot=blackboard.get("state") or {},
                 global_controls=blackboard.get("global_controls"),
+                metacognitive_directive=blackboard.get(
+                    "metacognitive_directive", "PROCEED"
+                ),
+                privacy_filter=blackboard.get("privacy_filter"),
             )
             selected = behavior_decision.selected_candidate
             selected_kind = selected.get("kind") if selected else None
@@ -994,6 +1010,8 @@ class DecisionService:
         raw_content: str,
         state_snapshot: dict[str, Any] | None = None,
         global_controls: Any | None = None,
+        metacognitive_directive: str = "PROCEED",
+        privacy_filter: Callable[[ActionCandidate], bool] | None = None,
     ) -> BehaviorDecision:
         """Phase 02 Package B: constraint-first candidate generation and
         selection for one social-response turn. Returns a copy of
@@ -1009,6 +1027,11 @@ class DecisionService:
         the flag is off, matching this repo's existing PHASE_02_MEMORY_TRUTH
         gating pattern. Both are optional and additive -- omitting them
         reproduces exact prior behavior.
+
+        `metacognitive_directive` and `privacy_filter` (Phase 04 Package B)
+        pass straight through to `score_and_select`, unconditionally --
+        their own defaults ("PROCEED", None) are what make them no-ops for
+        every caller that does not set them.
         """
         forbidden_claims = list(self._immutable_core().get("boundaries", []))
         candidates = self._build_candidates(
@@ -1053,6 +1076,8 @@ class DecisionService:
                 global_controls if Config.PHASE_03_AFFECT_CONTROL else None
             ),
             forbidden_claims=forbidden_claims,
+            metacognitive_directive=metacognitive_directive,
+            privacy_filter=privacy_filter,
         )
 
         retrieval_degraded = any(

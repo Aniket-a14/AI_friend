@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import re
 import uuid
+from collections.abc import Callable
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -78,6 +79,47 @@ _EXPLORATION_UNCERTAINTY_WEIGHT = 0.25
 # A tight effort budget penalizes cost (a heavy, multi-step candidate); the
 # penalty grows as the budget shrinks toward 0, via (1 - effort_budget).
 _EFFORT_COST_PENALTY_WEIGHT = 0.3
+
+# Phase 04 Package B: metacognitive-directive scoring modulation
+# (FINAL_HUMANOID_BRAIN_ARCHITECTURE.md Sections 20, 21). A directive of
+# PROCEED (the default whenever no calibration engine is wired in yet)
+# applies no modulation at all, matching exact pre-Phase-04 scoring.
+# ABSTAIN's penalty is large enough to always outweigh a SPEAK candidate's
+# own score plus goal alignment and global-control modulation combined --
+# an ungrounded-confidence directive must never lose to a SPEAK candidate
+# on points.
+_ABSTAIN_SPEAK_PENALTY = 5.0
+_ABSTAIN_WAIT_BOOST = 0.3
+_ASK_CLARIFICATION_BOOST = 0.4
+_VERIFY_BOOST = 0.4
+
+
+def _metacognitive_modulation(
+    candidate: ActionCandidate, metacognitive_directive: str
+) -> float:
+    """Score adjustment from the current metacognitive directive
+    (Architecture Sections 20, 21). Returns 0.0 for "PROCEED" (or any
+    unrecognized directive) so a caller that never sets this sees
+    byte-identical scoring to before this modulation existed.
+
+    ABSTAIN heavily penalizes SPEAK -- the candidate kind used for
+    assertions the agent is not grounded enough to make -- and boosts WAIT,
+    the safe fallback. ASK_CLARIFICATION boosts ASK; VERIFY boosts VERIFY.
+    HEDGE carries no candidate-kind boost here: it is realized as a prompt-
+    level qualifier on whatever candidate wins, not a preference for one
+    kind over another.
+    """
+    if metacognitive_directive == "ABSTAIN":
+        if candidate.kind == "SPEAK":
+            return -_ABSTAIN_SPEAK_PENALTY
+        if candidate.kind == "WAIT":
+            return _ABSTAIN_WAIT_BOOST
+        return 0.0
+    if metacognitive_directive == "ASK_CLARIFICATION" and candidate.kind == "ASK":
+        return _ASK_CLARIFICATION_BOOST
+    if metacognitive_directive == "VERIFY" and candidate.kind == "VERIFY":
+        return _VERIFY_BOOST
+    return 0.0
 
 
 def _clamp01(value: float) -> float:
@@ -298,6 +340,8 @@ class CandidateSelector:
         active_goals: list[str],
         global_controls: Any | None = None,
         forbidden_claims: list[str] | None = None,
+        metacognitive_directive: str = "PROCEED",
+        privacy_filter: Callable[[ActionCandidate], bool] | None = None,
     ) -> tuple[ActionCandidate, list[dict[str, Any]]]:
         """Ranks surviving candidates by score plus goal alignment plus
         global-control modulation.
@@ -336,8 +380,18 @@ class CandidateSelector:
         (e.g. WAIT, with no constraint_claims) among `candidates`.
 
         Returns (winner, rejected) where rejected carries a reason dict per
-        runner-up (constraint violations first, then lower-ranked scores),
-        ordered from strongest to weakest alternative within each group.
+        runner-up (constraint violations first, then privacy rejections,
+        then lower-ranked scores), ordered from strongest to weakest
+        alternative within each group.
+
+        Phase 04 Package B: `metacognitive_directive` (default "PROCEED",
+        additive) nudges ranking per `_metacognitive_modulation`.
+        `privacy_filter` (default None, additive), when supplied, is called
+        once per surviving candidate; a candidate it returns False for is
+        removed before scoring and reported with reason
+        "privacy_disclosure_violation" -- the cross-person disclosure
+        isolation invariant (Architecture Section 15) is enforced here, at
+        the same constraint-first point identity boundaries are.
         """
         if not candidates:
             raise ValueError("score_and_select requires at least one candidate")
@@ -365,12 +419,36 @@ class CandidateSelector:
                     "(e.g. WAIT, with no constraint_claims) was supplied"
                 )
 
+        privacy_rejected: list[dict[str, Any]] = []
+        if privacy_filter is not None:
+            allowed = []
+            for candidate in survivors:
+                if privacy_filter(candidate):
+                    allowed.append(candidate)
+                else:
+                    privacy_rejected.append(
+                        {
+                            "candidate_id": candidate.candidate_id,
+                            "kind": candidate.kind,
+                            "source": candidate.source,
+                            "reason": "privacy_disclosure_violation",
+                        }
+                    )
+            survivors = allowed
+            if not survivors:
+                raise ValueError(
+                    "score_and_select: privacy_filter rejected every "
+                    "candidate and no privacy-safe fallback candidate was "
+                    "supplied"
+                )
+
         def combined_score(candidate: ActionCandidate) -> float:
             return (
                 candidate.score
                 + _GOAL_ALIGNMENT_WEIGHT
                 * self._goal_alignment(candidate, active_goals)
                 + _control_modulation(candidate, global_controls)
+                + _metacognitive_modulation(candidate, metacognitive_directive)
             )
 
         ranked = sorted(survivors, key=combined_score, reverse=True)
@@ -385,4 +463,4 @@ class CandidateSelector:
             }
             for candidate in ranked[1:]
         ]
-        return winner, constraint_rejected + score_rejected
+        return winner, constraint_rejected + privacy_rejected + score_rejected
