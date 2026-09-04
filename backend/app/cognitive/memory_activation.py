@@ -160,22 +160,46 @@ class AntiInjectionGate:
 _VALID_CONTRADICTION_STATES: frozenset[str] = frozenset(ContradictionState.__args__)
 
 
+def _nested_metadata(memory: dict[str, Any]) -> dict[str, Any]:
+    """`memory["metadata"]` when it is itself a dict, else `{}`.
+
+    `SurfacingAgent` (`agents/surfacing_agent.py`) places source truth
+    fields under each surfaced memory's own `metadata` dict rather than at
+    the top level; `CognitiveService._on_memory_surfaced` now preserves
+    that nested dict alongside the flattened top-level copies (fix round
+    P7-FIX-03/P7-FIX-06). A degraded or non-dict `metadata` value must never
+    raise here -- it simply contributes nothing, the same as it being
+    absent.
+    """
+    metadata = memory.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
 def _extract_contradiction_state(memory: dict[str, Any]) -> ContradictionState:
     """A memory dict's own `contradiction_state` wins outright when present
-    and recognized. Failing that, a linked `BeliefRecord` (memory_records.py
-    -- either the object itself under `belief_record`/`belief`, or an
-    already-dict-shaped copy) contributes its `status`
-    (ACTIVE/SUPERSEDED/INVALIDATED/DISPUTED) or, for a temporal-store
-    contradiction decision, its `contradiction_type`
+    and recognized, checked at the top level first and then inside a
+    nested `metadata` dict. Failing that, a linked `BeliefRecord`
+    (memory_records.py -- either the object itself under `belief_record`/
+    `belief`, at either level, or an already-dict-shaped copy) contributes
+    its `status` (ACTIVE/SUPERSEDED/INVALIDATED/DISPUTED) or, for a
+    temporal-store contradiction decision, its `contradiction_type`
     (CONFLICT/UPDATE/CORRECTION/ELABORATION). Anything unrecognized falls
     back to "NONE" -- this adapter must never invent a dispute the source
     data did not actually assert.
     """
-    explicit = memory.get("contradiction_state")
-    if isinstance(explicit, str) and explicit in _VALID_CONTRADICTION_STATES:
-        return explicit  # type: ignore[return-value]
+    metadata = _nested_metadata(memory)
 
-    belief = memory.get("belief_record") or memory.get("belief")
+    for source in (memory, metadata):
+        explicit = source.get("contradiction_state")
+        if isinstance(explicit, str) and explicit in _VALID_CONTRADICTION_STATES:
+            return explicit  # type: ignore[return-value]
+
+    belief = (
+        memory.get("belief_record")
+        or memory.get("belief")
+        or metadata.get("belief_record")
+        or metadata.get("belief")
+    )
     if belief is not None:
         contradiction_type = getattr(belief, "contradiction_type", None)
         if contradiction_type is None and isinstance(belief, dict):
@@ -198,17 +222,50 @@ def _extract_contradiction_state(memory: dict[str, Any]) -> ContradictionState:
 
 
 def _extract_outage_flag(memory: dict[str, Any]) -> bool:
-    """True when the memory dict itself was stamped with a retrieval
-    failure -- either an explicit `outage_flag`, or an `error`/
-    `retrieval_error` key a degraded surfacing path attaches (mirroring
-    `MemoryStore.last_search_error` on the retrieval side)."""
-    if memory.get("outage_flag"):
-        return True
-    return bool(memory.get("error") or memory.get("retrieval_error"))
+    """True when the memory dict itself, or its nested `metadata`, was
+    stamped with a retrieval failure -- an explicit `outage_flag`, or an
+    `error`/`retrieval_error` key a degraded surfacing path attaches
+    (mirroring `MemoryStore.last_search_error` on the retrieval side)."""
+    metadata = _nested_metadata(memory)
+    for source in (memory, metadata):
+        if source.get("outage_flag"):
+            return True
+        if source.get("error") or source.get("retrieval_error"):
+            return True
+    return False
+
+
+_RETRIEVAL_OUTAGE_RECORD_ID = "memory-retrieval-outage"
+
+
+def _retrieval_outage_activation(last_search_error: str) -> MemoryActivation:
+    """A synthetic, content-free activation representing a whole-retrieval
+    failure that produced zero surfaced memories.
+
+    `MemoryStore.search_memories` records a failure in `last_search_error`
+    and still returns `[]` on an outage (never raising) -- indistinguishable,
+    to a caller that only looks at the surfaced-memories list, from "nothing
+    relevant was found" (see `MemoryActivation.outage_flag`'s own docstring
+    on exactly this collapse). When a caller supplies that error string here
+    and the surfaced list is empty, this stands in for the outage so
+    `retrieval_degraded` still gets set downstream instead of the failure
+    disappearing into an empty list.
+    """
+    return MemoryActivation(
+        record_id=_RETRIEVAL_OUTAGE_RECORD_ID,
+        record_type="experience",
+        structured_value={"error": str(last_search_error)},
+        relevance_score=0.0,
+        provenance="memory_store_outage",
+        contradiction_state="NONE",
+        outage_flag=True,
+    )
 
 
 def memories_to_activations(
     surfaced_memories: list[dict[str, Any]] | None,
+    *,
+    last_search_error: str | None = None,
 ) -> list[MemoryActivation]:
     """Adapt legacy surfaced-memory dicts into typed MemoryActivation tokens.
 
@@ -225,21 +282,46 @@ def memories_to_activations(
     Every adapted token gets `record_type="experience"` (the closest fit
     for an untyped retrieved snippet). `contradiction_state` and
     `outage_flag` are no longer hardcoded (finding: a legacy dict carrying
-    real contradiction/outage information from a degraded retrieval path
-    was silently discarded here, blinding the agent to both) -- see
-    `_extract_contradiction_state` and `_extract_outage_flag`. A plain
-    legacy dict with neither key still resolves to "NONE"/False exactly as
-    before.
+    real contradiction/outage information from a degraded retrieval path,
+    at the top level or nested under `metadata`, was silently discarded
+    here, blinding the agent to both) -- see `_extract_contradiction_state`
+    and `_extract_outage_flag`. A plain legacy dict with neither key still
+    resolves to "NONE"/False exactly as before.
+
+    `last_search_error` (fix round P7-FIX-06, optional, keyword-only):
+    mirrors `MemoryStore.last_search_error`, which `search_memories` sets
+    on a genuine retrieval failure while still returning `[]` (never
+    raising) -- indistinguishable, to a caller that only sees the surfaced-
+    memories list, from "nothing relevant was found" (the exact collapse
+    `MemoryActivation.outage_flag`'s own docstring warns against). When
+    supplied and truthy, and no adapted activation already carries
+    `outage_flag=True`, one synthetic content-free activation
+    (`_retrieval_outage_activation`) is appended so a whole-retrieval
+    failure -- including the common case where it produced an empty
+    `surfaced_memories` list -- still reaches `pipeline.py`'s
+    `retrieval_degraded` computation (`any(activation.outage_flag for
+    activation in activations)`) instead of disappearing into an empty
+    list. Not yet wired to a live caller: `pipeline.py`'s
+    `_setup_memory_activations` still calls this positionally with only
+    `surfaced_memories` -- passing `memory_store.last_search_error` through
+    there is documented follow-up
+    (`orchestration/PHASE_07/CLAUDE_RESULT.md`).
     """
-    if not surfaced_memories:
-        return []
     activations: list[MemoryActivation] = []
-    for index, memory in enumerate(surfaced_memories):
+    for index, memory in enumerate(surfaced_memories or []):
         if not isinstance(memory, dict):
             continue
         content = memory.get("content")
         if not content:
             continue
+            if _extract_outage_flag(memory):
+                content = str(
+                    memory.get("error")
+                    or _nested_metadata(memory).get("error")
+                    or "retrieval_outage"
+                )
+            else:
+                continue
         relevance = memory.get("relevance", memory.get("score", 1.0))
         if isinstance(relevance, (int, float)) and not isinstance(relevance, bool):
             relevance_score = max(0.0, min(1.0, float(relevance)))
@@ -263,4 +345,7 @@ def memories_to_activations(
                 outage_flag=_extract_outage_flag(memory),
             )
         )
+    if last_search_error and not any(a.outage_flag for a in activations):
+        activations.append(_retrieval_outage_activation(last_search_error))
     return activations
+

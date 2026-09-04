@@ -247,6 +247,70 @@ def test_check_protected_domain_catches_protected_rollback_value_keys():
     assert reason
 
 
+# ---------------------------------------------------------------------------
+# Fix round (orchestration/PHASE_07/FIX_PLAN.md P7-FIX-05): `new_traits` --
+# the ADAPTIVE-tier key `IdentityManager.evolve_persona` reads to call
+# `PersonaProfile.learn_traits` -- must be recognized as a safe, allowed
+# proposed_value key despite tokenizing to ("new", "traits"), while a bare
+# "traits" key (naming the unrelated CONSTITUTIONAL `PersonaProfile.traits`
+# field directly) and every other protected field remain strictly rejected.
+# ---------------------------------------------------------------------------
+
+
+def test_new_traits_proposed_value_key_is_not_protected():
+    protected, reason = check_targets_protected_domain(
+        "identity.reflection_persona_suggestion",
+        {"new_traits": ["Reserved"], "relationship": "Strained", "confidence": 0.9},
+    )
+    assert protected is False
+    assert reason == ""
+
+
+def test_bare_traits_proposed_value_key_is_still_protected():
+    """"traits" named as its own, direct field (not the ADAPTIVE `new_traits`
+    operation) must still be rejected -- the exemption is scoped to the one
+    known-safe key, not to the word "traits" in general."""
+    protected, reason = check_targets_protected_domain(
+        "identity.reflection_persona_suggestion", {"traits": ["Reserved"]}
+    )
+    assert protected is True
+    assert reason
+
+
+@pytest.mark.parametrize(
+    "proposed_value",
+    [
+        {"mood_decay_rate": 0.0},
+        {"baseline_valence": 0.9},
+        {"values": ["new value"]},
+        {"boundaries": []},
+    ],
+)
+def test_other_protected_fields_remain_rejected_alongside_new_traits(proposed_value):
+    """The `new_traits` exemption must not widen into a general loophole:
+    every other protected field stays rejected even in a payload that also
+    carries the allowed `new_traits` key."""
+    combined = {"new_traits": ["Reserved"], **proposed_value}
+    protected, reason = check_targets_protected_domain(
+        "identity.reflection_persona_suggestion", combined
+    )
+    assert protected is True
+    assert reason
+
+
+@pytest.mark.parametrize("obfuscated_key", ["New_Traits", "new-traits", "NEW_TRAITS"])
+def test_new_traits_exemption_does_not_widen_to_obfuscated_spellings(obfuscated_key):
+    """The exemption matches the exact, case-sensitive key `evolve_persona`
+    reads -- an obfuscated spelling gains nothing (evolve_persona would not
+    recognize it as the operation either) and must still be caught by the
+    ordinary tokenized check."""
+    protected, reason = check_targets_protected_domain(
+        "identity.reflection_persona_suggestion", {obfuscated_key: ["Reserved"]}
+    )
+    assert protected is True
+    assert reason
+
+
 @pytest.mark.parametrize(
     "target_domain",
     [

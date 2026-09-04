@@ -79,36 +79,41 @@ Addresses the audit finding that `BM-GPU-P5-01` was a same-provider tautology. T
 
 ---
 
-## 2. Verification
+## 2. Verification & Fix Round Resolution
 
 ```
 cd backend
-../.venv/bin/python -m pytest tests/test_provider_portability_validation.py tests/test_phase5_tom.py tests/test_context_assembly.py tests/test_action_selection.py tests/test_phase6_advanced_cognition.py
+../.venv/bin/python -m pytest -q --junit-xml=/tmp/claude_res2.xml
 ../.venv/bin/python -m ruff check .
 ../.venv/bin/python -m radon cc app/ -s -n D
 ```
 
-Results (run from `/Users/aniketsaha/Projects/ai-friend-claude/backend` against `/Users/aniketsaha/Projects/AI_friend/.venv`, the shared repo-root virtualenv, since this worktree has no `.venv` of its own):
+Results (run from `/Users/aniketsaha/Projects/ai-friend-claude/backend` against `/Users/aniketsaha/Projects/AI_friend/.venv`):
 
-- The five specified files: **186 tests, 0 failures, 0 errors** (includes 8 new memory-activation tests, 2 new governance tests, and 9 new provider-portability tests beyond the pre-existing count).
+- Full backend suite: **2,371 tests passed, 0 failures, 0 errors, 0 skipped** (58.887s).
 - `ruff check .`: **All checks passed.**
 - `radon cc app/ -s -n D`: **no output** -- zero functions at complexity grade D or worse.
-- Pure 7-bit ASCII: verified on every changed line across all owned files (one pre-existing `Section symbol` in a comment I touched in `config.py` was ASCII-ized to "Section 14" while I was there, since editing that line brought it into my diff).
-- Full backend suite (`pytest -q`, no path filter): **2351 tests, 1 failure, 0 errors** on the first run; the same single failure recurs on a second full run. See "Known issue" below -- it is a pre-existing test-order sensitivity, not a regression this package introduces, and it is outside every file this package owns or was asked to update.
+- Pure 7-bit ASCII: verified across all modified files.
 
-### Known issue (NOT fixed, explicitly out of scope): `test_scenarios.py::test_scenario_hostile_interaction_drift` full-suite-order failure
+### Fix Round Items Resolved (orchestration/PHASE_07/FIX_PLAN.md):
 
-This test passes in isolation, passes when run together with just the 5 specified verification files plus `test_learning_review.py`/`test_reflection.py`/`test_background_governed_learning.py`, and passes when run together with the ~136 files that precede it alphabetically in full collection order (confirmed via a reduced-order rerun). It fails only in the complete, unfiltered full-suite run, both times it was run that way. I already hardened this test against the `LEARNING_REVIEW_REQUIRED` default flip itself (pinning the flag `False` for its duration, matching its own existing manual save/restore pattern for `LLM_INTENT_CLASSIFICATION_ENABLED`) -- that fix is real and necessary regardless, but it does not resolve the residual full-suite-only failure. Investigation traced the observable symptom to `Config.REFLECTION_MIN_INTERVAL_SECONDS` reading its raw class default (`30.0`) rather than the `enforce_test_config` autouse fixture's per-test override (`0`) at the point this test runs, when preceded by the *entire* suite -- but a reduced rerun of the same file set did not reproduce it, pointing to genuine cross-test ordering/timing sensitivity in the existing fixture composition (`enforce_test_config` autouse vs. per-test `monkeypatch` teardown ordering) rather than a deterministic leak from any single identifiable test. This predates Phase 07: it is a fixture-composition fragility in the shared test suite, exposed (not created) by moving `PHASE_02_MEMORY_TRUTH`/`PHASE_03_AFFECT_CONTROL`/`LEARNING_REVIEW_REQUIRED` from `False` to `True` defaults, which changed how many other tests' Config mutations interact. Recommended follow-up (not performed here, per user instruction to leave it): give `enforce_test_config` explicit, unconditional control of `REFLECTION_MIN_INTERVAL_SECONDS` too (it currently only manages `LLM_INTENT_CLASSIFICATION_ENABLED`, `REFLECTION_ENABLED`, and `FACIAL_REFLEX_ENABLED`), or reproduce it deterministically with `pytest-randomly` disabled and `-p no:cacheprovider` bisection with real file arguments (not shell variable expansion, which this session found to unreliably drop to zero collected tests in this sandbox for large argument lists -- a tooling quirk, not a pytest behavior, documented here so a future session does not waste time on it again).
+1. **Resolved `test_scenarios.py::test_scenario_hostile_interaction_drift` (P7-FIX-04):**
+   - Root cause identified: `tests/test_mesh.py`'s `test_config_environment_override` called `importlib.reload(config)`, destroying the singleton object identity of `Config` across previously imported modules (`learning.Config` remained pointing to the pre-reload class object, leaving its `LEARNING_REVIEW_REQUIRED` untouched by test monkeypatching).
+   - Fix: Updated `test_mesh.py` to instantiate `AppSettings()` directly without destroying global module identity, and made `test_scenarios.py` defensively patch `learning.Config` and `Config` using `monkeypatch`.
+2. **Unified Learning Governor & Eliminated Key Renaming Hack (P7-FIX-01/P7-FIX-05):**
+   - `ReflectionService.__init__` accepts `governor: LearningGovernor | None = None`.
+   - Payload preservation: `_governed_persona_proposal` passes `dict(suggestions)` without renaming `new_traits`.
+   - `_ADAPTIVE_ALLOWED_FIELD_NAMES` in `learning_governance.py` exempts `new_traits` while keeping constitutional `traits` strictly protected.
+3. **Surfaced Retrieval Outages on Degraded/Empty Results (P7-FIX-06):**
+   - In `memories_to_activations`: handles empty content for outage memories and appends `_retrieval_outage_activation` when `last_search_error` is supplied and no outage is yet flagged.
 
 ---
 
 ## 3. NOT done / explicitly out of scope
 
-- The full-suite-order flake in `test_scenarios.py` described above (left as instructed).
-- `backend/app/state/memory_store.py`: no changes were made because the described requirement (`last_search_error` / degraded-status surfacing) was already fully implemented before this phase (see B2 above) -- this is a genuine "already done," not an oversight.
-- Nothing in `backend/app/cognitive/core.py`, `pipeline.py`, `decision.py`, `action.py`, `brain_agent.py`, or `session_state.py` was touched -- those are Package A's (Codex's) owned files per `orchestration/PHASE_07/PLAN.md`.
-- `backend/tests/test_runtime_composition.py` (Package A's new test file) was not created here.
-- The governor wiring in `learning.py` does not use `LearningGovernor`'s `state_applier`/`activate()`/`rollback()` lifecycle -- only `submit`/`validate`/`approve` are exercised. Actual persona mutation still flows through `review_queue`'s existing `approve(id, identity_manager)` path (`learning_review.py`), unchanged. Wiring the governed proposal all the way through `activate()`/`rollback()` as the actual state-mutation mechanism (rather than a pre-flight content-safety gate ahead of the existing queue) is a larger redesign not attempted here, consistent with `learning_governance.py`'s own module docstring describing itself as additive.
+- `backend/app/state/memory_store.py`: no changes needed as `last_search_error` was already recorded.
+- `backend/tests/test_runtime_composition.py` is owned by Package A (Codex).
+- Governor wiring in `learning.py` acts as a pre-flight content-safety gate ahead of the review queue rather than executing the full `activate()`/`rollback()` lifecycle.
 
 ---
 
@@ -117,12 +122,17 @@ This test passes in isolation, passes when run together with just the 5 specifie
 - `backend/app/agents/subconscious_agent.py`
 - `backend/app/cognitive/memory_activation.py`
 - `backend/app/cognitive/learning.py`
+- `backend/app/cognitive/learning_governance.py`
 - `backend/app/config.py`
-- `backend/tests/test_phase6_advanced_cognition.py`
-- `backend/tests/test_phase5_tom.py`
-- `backend/tests/test_context_assembly.py`
 - `backend/tests/test_action_selection.py`
+- `backend/tests/test_context_assembly.py`
+- `backend/tests/test_learning_governance.py`
 - `backend/tests/test_learning_review.py`
+- `backend/tests/test_mesh.py`
+- `backend/tests/test_phase5_tom.py`
+- `backend/tests/test_phase6_advanced_cognition.py`
+- `backend/tests/test_provider_portability_validation.py` (new)
 - `backend/tests/test_reflection.py`
 - `backend/tests/test_scenarios.py`
-- `backend/tests/test_provider_portability_validation.py` (new)
+- `orchestration/PHASE_07/CLAUDE_RESULT.md`
+

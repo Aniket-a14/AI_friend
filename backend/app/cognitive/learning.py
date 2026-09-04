@@ -30,14 +30,19 @@ class ReflectionService:
     """
 
     def __init__(
-        self, llm_service=None, graph_store=None, pg_vector=None, identity_manager=None
+        self,
+        llm_service=None,
+        graph_store=None,
+        pg_vector=None,
+        identity_manager=None,
+        governor: LearningGovernor | None = None,
     ):
         self.llm = llm_service
         self.graph = graph_store
         self.vector = pg_vector
         # `persona_file=None` on the fallback, not `AUTO_DISCOVER`. The real
         # path injects `CognitiveService`'s manager and never reaches this, so
-        # anything that does get here is a reflection service standing alone —
+        # anything that does get here is a reflection service standing alone --
         # and one that walked up the tree to adopt whatever `config/persona.toml`
         # happened to be checked out would be evolving a persona nobody wired to
         # it. A default identity is a safe fallback; a *discovered* one is not.
@@ -59,7 +64,15 @@ class ReflectionService:
         # configured: this governor is a content-safety gate, not the thing
         # that writes persona state -- `review_queue`/`evolve_persona` still
         # own that, unchanged.
-        self.governor = LearningGovernor()
+        #
+        # Fix round (P7-FIX-01/P7-FIX-05): `governor` is now injectable so
+        # `CognitiveService` can pass its own `LearningGovernor` instance in,
+        # giving the whole process one shared, durable proposal registry
+        # instead of two independent audit trails that do not know about
+        # each other. A caller that does not supply one (every existing
+        # standalone construction, including this class's own tests) still
+        # gets a private instance, unchanged from before.
+        self.governor = governor if governor is not None else LearningGovernor()
 
         # AI Friend: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
@@ -316,28 +329,20 @@ class ReflectionService:
         """Section 21's hard invariant, applied via a real `LearningProposal`
         (learning_governance.py) before `suggestions` reaches `review_queue`.
 
-        `suggestions` is copied into `proposed_value` key-for-key -- keeping
-        every field a real, scannable dict key is exactly what lets a
-        genuinely smuggled protected field name (e.g. a suggestion that
-        somehow carried a literal `mood_decay_rate` key) still get caught
-        and rejected below -- with one deliberate rename. Found while
-        wiring this up: `evolve_persona`'s own suggestion key `new_traits`
-        (an ADAPTIVE-tier list of trait *additions* -- see
-        `PersonaProfile.learn_traits`) tokenizes to `["new", "traits"]`
-        under `learning_governance.py`'s delimiter-splitting tokenizer, and
-        "traits" alone is a protected single-word marker there because
-        `PersonaProfile.traits` (unrelated: the CONSTITUTIONAL, fixed-at-
-        creation core temperament list) happens to be named exactly that.
-        Every ordinary reflection suggestion carrying `new_traits` would
-        therefore be rejected outright -- a false positive on the one
-        suggestion shape this call site actually produces, not a gap in
-        the scan. Renaming just that one known-safe key to
-        `new_trait_additions` (singular "trait", so it no longer tokenizes
-        to the protected word) sidesteps the collision without hiding
-        anything: the value is unchanged, and every *other* key --
-        including one this adapter has never seen before -- still passes
-        through as a literal dict key, scannable exactly as
-        `check_targets_protected_domain` expects.
+        `suggestions` is copied into `proposed_value` key-for-key, unmodified
+        -- the governed proposal's audited payload must describe exactly
+        the value `review_queue`/`evolve_persona` actually applies, not a
+        renamed stand-in. Keeping every field a real, scannable dict key is
+        also exactly what lets a genuinely smuggled protected field name
+        (e.g. a suggestion that somehow carried a literal `mood_decay_rate`
+        key) still get caught and rejected below.
+        `learning_governance.py`'s `_ADAPTIVE_ALLOWED_FIELD_NAMES`
+        explicitly exempts `evolve_persona`'s own `new_traits` key (an
+        ADAPTIVE-tier list of trait *additions*, see
+        `PersonaProfile.learn_traits`) from the single-word `traits` check
+        that would otherwise false-positive on it -- see that constant's
+        docstring for the full collision history and why the exemption is
+        scoped narrowly rather than weakening the check generally.
 
         Returns `None` when `LearningGovernor.submit` rejects the proposal
         outright -- it targets the immutable persona core, a safety
@@ -349,13 +354,10 @@ class ReflectionService:
         content-safety filter ahead of it, not a second reviewer
         duplicating its job.
         """
-        proposed_value = dict(suggestions)
-        if "new_traits" in proposed_value:
-            proposed_value["new_trait_additions"] = proposed_value.pop("new_traits")
         proposal = GovernedLearningProposal(
             source_records=[contradicts_id] if contradicts_id else [],
             target_domain="identity.reflection_persona_suggestion",
-            proposed_value=proposed_value,
+            proposed_value=dict(suggestions),
             expected_effect="reflection_persona_update",
             risk_class=LearningRiskClass.LOW,
             rollback_value={
@@ -474,11 +476,11 @@ class ReflectionService:
 
     async def _consolidate(self, episodes: list[dict[str, Any]]):
         """
-        Background Solid State Consolidation (§7):
+        Background Solid State Consolidation (Section 7):
         1. Fact Resolution (Deduplication & Gating)
         2. Persona Evolution (Locked Logic)
 
-        Episodes now use the enriched schema (§6.1 — Tulving + Amory):
+        Episodes now use the enriched schema (Section 6.1 -- Tulving + Amory):
         {id, event, context, emotion_vector, appraisal, relationship_delta, response}
         """
         self.is_reflecting = True

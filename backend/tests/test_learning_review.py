@@ -177,6 +177,15 @@ async def test_review_required_records_a_governed_proposal_alongside_the_legacy_
     assert proposals[0].status.value == "APPROVED"
     assert proposals[0].target_domain == "identity.reflection_persona_suggestion"
 
+    # Fix round (P7-FIX-05): the governor's audited payload must describe
+    # exactly the value the review queue actually holds for approval/apply
+    # -- a renamed or otherwise altered governor copy would make the audit
+    # record inaccurate even though the queue applies something else.
+    pending = reflection_service.review_queue.pending()
+    assert len(pending) == 1
+    assert proposals[0].proposed_value == pending[0].suggestions
+    assert proposals[0].proposed_value["new_traits"] == ["Logical"]
+
 
 @pytest.mark.asyncio
 async def test_review_required_rejects_a_suggestion_smuggling_a_protected_field(
