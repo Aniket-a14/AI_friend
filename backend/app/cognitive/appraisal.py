@@ -1,5 +1,5 @@
 """
-Appraisal Engine — OCC/Lazarus/EMA (psychological_layer.md §1).
+Appraisal Engine -- OCC/Lazarus/EMA (psychological_layer.md section1).
 
 Computes the 6-variable appraisal vector on every user event.
 Uses heuristic computation on the hot path; the ReappraisalEngine
@@ -17,11 +17,119 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from .json_extract import extract_json_blocks
 
 logger = logging.getLogger(__name__)
 
 _NORM_SKIP_WORDS = frozenset({"not", "no", "don't", "never", "without", "isn't"})
+
+
+class AppraisalRecord(BaseModel):
+    """Structured valuation of one event against goals and expectation.
+
+    This record is intentionally separate from the legacy ``AppraisalVector``:
+    it is a pure event reducer output and does not own factual state, evidence,
+    identity, or safety constraints.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    event_id: str
+    goal_congruence: float = Field(default=0.0, ge=-1.0, le=1.0)
+    expectation: float = Field(default=0.0, ge=-1.0, le=1.0)
+    agency: float = Field(default=0.0, ge=-1.0, le=1.0)
+    controllability: float = Field(default=0.5, ge=0.0, le=1.0)
+    novelty: float = Field(default=0.0, ge=0.0, le=1.0)
+    affect_delta: dict[str, float] = Field(default_factory=dict)
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, float(value)))
+
+
+def _metadata_number(metadata: dict, key: str, default: float) -> float:
+    """Read a finite numeric metadata value without mutating the event."""
+    value = metadata.get(key, default)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return default
+
+
+def _event_goal_ids(event_metadata: dict) -> set[str]:
+    """Collect optional goal identifiers from a permissive event envelope."""
+    values: list[object] = []
+    for key in ("goal_id", "goal_ids", "goals", "active_goal"):
+        value = event_metadata.get(key)
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            values.append(value)
+        elif isinstance(value, (list, tuple, set)):
+            values.extend(value)
+    return {str(value) for value in values if isinstance(value, (str, int, float))}
+
+
+def _goal_congruence(event_metadata: dict, active_goals: list[str]) -> float:
+    """Resolve explicit congruence first, then infer it from goal overlap."""
+    raw_congruence = event_metadata.get("goal_congruence")
+    if isinstance(raw_congruence, (int, float)) and not isinstance(raw_congruence, bool):
+        return _clamp(raw_congruence, -1.0, 1.0)
+    if event_metadata.get("goal_congruent") is True:
+        return 1.0
+    if event_metadata.get("goal_incongruent") is True:
+        return -1.0
+    if _event_goal_ids(event_metadata) & {str(goal) for goal in active_goals}:
+        return 1.0
+    return 0.0
+
+
+def appraise_event(
+    event_metadata: dict,
+    active_goals: list[str],
+    expectation: float = 0.0,
+) -> AppraisalRecord:
+    """Purely reduce event metadata and active goals into an appraisal record.
+
+    Affects are directional control deltas only. The reducer neither receives
+    nor mutates beliefs, evidence, identity, provenance, or safety policy.
+    """
+    goal_congruence = _goal_congruence(event_metadata, active_goals)
+    novelty = _clamp(_metadata_number(event_metadata, "novelty", 0.0), 0.0, 1.0)
+    agency = _clamp(_metadata_number(event_metadata, "agency", 0.0), -1.0, 1.0)
+    controllability = _clamp(
+        _metadata_number(event_metadata, "controllability", 0.5), 0.0, 1.0
+    )
+    input_expectation = _clamp(
+        _metadata_number(event_metadata, "expectation", expectation), -1.0, 1.0
+    )
+    unexpectedness = _clamp(
+        _metadata_number(
+            event_metadata, "unexpectedness", (1.0 - input_expectation) / 2.0
+        ),
+        0.0,
+        1.0,
+    )
+    reduced_expectation = _clamp(
+        input_expectation - 0.50 * novelty - 0.25 * unexpectedness, -1.0, 1.0
+    )
+
+    affect_delta = {
+        "pleasure": _clamp(0.40 * goal_congruence, -1.0, 1.0),
+        "arousal": _clamp(0.30 * novelty + 0.30 * unexpectedness, -1.0, 1.0),
+        "dominance": _clamp(
+            0.40 * (controllability - 0.50) + 0.10 * agency, -1.0, 1.0
+        ),
+    }
+    event_id = str(event_metadata.get("event_id", event_metadata.get("id", "event")))
+    return AppraisalRecord(
+        event_id=event_id,
+        goal_congruence=goal_congruence,
+        expectation=reduced_expectation,
+        agency=agency,
+        controllability=controllability,
+        novelty=novelty,
+        affect_delta=affect_delta,
+    )
 
 
 def _word_set(content: str) -> set[str]:
@@ -65,17 +173,17 @@ def _check_norm_alignment_fallback(content: str, boundaries: list[str]) -> float
 @dataclass(slots=True)
 class AppraisalVector:
     """
-    6-variable appraisal vector (§1.3).
+    6-variable appraisal vector (section1.3).
 
     Primary appraisal (Lazarus):
-        R  — Relevance          [0, 1]
-        N  — Novelty            [0, 1]
-        G  — Goal Congruence    [-1, 1]
+        R  -- Relevance          [0, 1]
+        N  -- Novelty            [0, 1]
+        G  -- Goal Congruence    [-1, 1]
 
     Secondary appraisal (Lazarus/OCC/EMA):
-        A  — Agency             [0, 1]
-        NA — Norm Alignment     [0, 1]
-        RI — Relationship Impact [-1, 1]  (our extension)
+        A  -- Agency             [0, 1]
+        NA -- Norm Alignment     [0, 1]
+        RI -- Relationship Impact [-1, 1]  (our extension)
     """
 
     relevance: float = 0.5
@@ -175,7 +283,7 @@ class AppraisalEngine:
             # High energy yells (energy > 0.15) or extremely high pitch (F0 > 250Hz) shifts appraisal
             if energy > 0.15 or pitch > 250.0:
                 logger.info(
-                    f"🎙️ [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
+                    f"[Audio] [Appraisal] High arousal user vocal cues detected (energy={energy:.3f}, pitch={pitch:.1f}Hz). Raising threat level."
                 )
 
         # Delegate to Rust; fall back to the pure-Python mirror if the
