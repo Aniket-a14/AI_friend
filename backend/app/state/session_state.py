@@ -29,7 +29,13 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+from ..config import Config
+from .workspace import CognitiveWorkspaceSnapshot, WorkspaceCommand
+
+if TYPE_CHECKING:
+    from .workspace_store import WorkspaceStore
 
 InterruptionState = Literal["none", "duck", "stop"]
 
@@ -66,25 +72,87 @@ class SessionState:
         return asdict(self)
 
 
-async def persist_session_state(store: Any, session_state: SessionState) -> None:
-    """Best-effort by construction: `WorkingMemoryStore` already swallows and
-    logs its own Redis/SQLite failures, so nothing here needs its own
-    try/except. `store=None` (a `CognitivePipeline` built without one, as
-    most unit tests do) is a deliberate no-op, not an error -- session
-    persistence is an enhancement, not a requirement for the pipeline to run.
+async def persist_session_state(
+    store: Any,
+    session_state: SessionState,
+    workspace_store: WorkspaceStore | None = None,
+    workspace_session_id: str | None = None,
+) -> None:
+    """Persist legacy state and optionally mirror it into the workspace.
+
+    The workspace write runs first when it is authoritative, so a rejected CAS
+    cannot leave a newer legacy value beside an older authoritative value.
+    ``store=None`` remains a supported no-op when no workspace is supplied.
     """
-    if store is None:
-        return
-    await store.set_state_var("session_state", session_state.to_dict())
+    if workspace_store is not None and _workspace_authoritative_enabled():
+        await _persist_workspace_session_state(
+            workspace_store,
+            workspace_session_id or session_state.turn_id,
+            session_state,
+        )
+    if store is not None:
+        await store.set_state_var("session_state", session_state.to_dict())
 
 
-async def load_session_state(store: Any) -> SessionState | None:
-    """The `WorkingMemoryStore` counterpart to `persist_session_state` --
-    used by a process resuming mid-turn (e.g. a restart) rather than by the
-    normal per-turn path, which always starts a fresh `SessionState`."""
-    if store is None:
+async def load_session_state(
+    store: Any,
+    workspace_store: WorkspaceStore | None = None,
+    workspace_session_id: str | None = None,
+) -> SessionState | None:
+    """Load authoritative state when enabled, otherwise retain legacy behavior.
+
+    A process resuming from workspace-only state must supply
+    ``workspace_session_id`` because legacy ``SessionState`` has no session ID.
+    """
+    data = await store.get_state_var("session_state") if store is not None else None
+    legacy_state = SessionState(**data) if data else None
+    if workspace_store is None or not _workspace_authoritative_enabled():
+        return legacy_state
+
+    session_id = workspace_session_id or (
+        legacy_state.turn_id if legacy_state is not None else None
+    )
+    if session_id is None:
+        return legacy_state
+    snapshot = await workspace_store.get_snapshot(session_id)
+    workspace_state = _session_state_from_workspace(snapshot)
+    return workspace_state or legacy_state
+
+
+def _workspace_authoritative_enabled() -> bool:
+    """Read the migration flag from the process-level configuration facade."""
+    return bool(getattr(Config, "WORKSPACE_AUTHORITATIVE", False))
+
+
+async def _persist_workspace_session_state(
+    workspace_store: WorkspaceStore,
+    session_id: str,
+    session_state: SessionState,
+) -> None:
+    snapshot = await workspace_store.get_snapshot(session_id)
+    await workspace_store.commit_transition(
+        WorkspaceCommand(
+            session_id=session_id,
+            expected_epoch=snapshot.epoch,
+            expected_revision=snapshot.revision,
+            percept_id=session_state.utterance_id,
+            focus_update=session_state.turn_id,
+            pending_action={"legacy_session_state": session_state.to_dict()},
+            command_source="session_state.dual_write",
+        )
+    )
+
+
+def _session_state_from_workspace(
+    snapshot: CognitiveWorkspaceSnapshot,
+) -> SessionState | None:
+    pending_action = snapshot.pending_action
+    if not isinstance(pending_action, dict):
         return None
-    data = await store.get_state_var("session_state")
-    if not data:
+    data = pending_action.get("legacy_session_state")
+    if not isinstance(data, dict):
         return None
-    return SessionState(**data)
+    try:
+        return SessionState(**data)
+    except (TypeError, ValueError):
+        return None

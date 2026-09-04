@@ -16026,3 +16026,60 @@ correct rather than catching it. Posted to `personal/HANDOFF.md`.
 - `llama3.2:3b`: Regressed on prompt disclosure (0.00 - leaked system prompt under pressure), failed core values recall (0.00), and emitted 12 markdown/JSON formatting anomalies into spoken text.
 - Comparative Gate: FAIL (llama3.2 regressed on 2 baseline passes).
 - Architectural Verdict: Persona collapse in 3B models is dual-factored (Cause A: model register ceiling + Cause B: prompt vulnerability). This definitively validates Architecture B: small models must act strictly as typed text generators bounded by deterministic cognitive code (`ClaimLedger`, `PersonaPolicy`, `deterministic_responses`, `intent_classifier`), rather than owning state, memory, or policy.
+
+## 2026-09-04 — Codex Phase 01 authoritative workspace and CAS store
+
+Implemented Codex's isolated Phase 01 storage package on `codex/phase-01`.
+
+Changed files:
+
+- `backend/app/state/workspace.py`
+- `backend/app/state/workspace_store.py`
+- `backend/app/state/session_state.py`
+- `backend/tests/test_workspace_store.py`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Added the frozen workspace snapshot and command/audit domain contracts plus a
+  store-owned mutable workspace model.
+- Added an async SQLite repository with in-memory mode, persisted restart
+  epochs, revision-zero recovery, append-only transition history, and atomic
+  `(epoch, revision)` CAS under `BEGIN IMMEDIATE`. Blocking database calls run
+  through `asyncio.to_thread`; separate SQLite connections are race-tested.
+- Added an opt-in legacy `SessionState` dual-write/read adapter gated by
+  `Config.WORKSPACE_AUTHORITATIVE`. Disabled behavior is unchanged, and an
+  explicit workspace session ID supports workspace-only restart recovery.
+- Added 11 focused tests covering initialization, sequential transitions,
+  stale revision rejection, epoch fencing/recovery, 20-writer contention,
+  separate-connection CAS, audit history, detached snapshots, and both flag
+  states for the legacy adapter.
+
+Verification:
+
+- Baseline `test_session_state.py`: 7/7 passed.
+- Final focused workspace + session suite: 18/18 passed.
+- Final full backend suite with socket permission: 1,848/1,848 passed (JUnit:
+  zero failures/errors/skips).
+- New/modified files: Mypy, Bandit, Ruff lint/format, Codespell, and diff checks
+  passed. Radon reported no D/E/F functions; repository maintainability grades
+  remained A-C.
+- Mutation checks: deliberately inverting epoch CAS, revision CAS, and revision
+  increment caused the expected test failures. The installed Mutmut rejects the
+  task's obsolete `--paths-to-mutate` option; an isolated equivalent run
+  generated 349 mutants, killed 293, and left 56 surviving non-critical or
+  equivalent mutations. No functional mutant survived in the epoch/revision
+  comparisons, revision increment, persisted epoch increment, or SQL CAS fence.
+
+Repository-wide quality baseline (not changed in this scoped package): full
+Mypy reports 16 errors in six unrelated files; full Bandit reports two existing
+medium/low-confidence dynamic-SQL findings; full Ruff formatting reports 43
+pre-existing files; and full Codespell reports existing source/generated-file
+findings. `pre-commit run --all-files` was run in an isolated copy because its
+hooks auto-fix; it failed on those same baseline formatting/lint/spelling issues
+without changing the Codex worktree.
+
+**NOT done:** Claude-owned percept/pipeline/brain-agent work was not touched;
+the Pydantic config declaration and production store wiring remain integration
+dependencies outside Codex's assigned files; no GPU work was attempted and all
+GPU criteria remain `PENDING_GPU`; no branch was merged or pushed.
