@@ -51,6 +51,12 @@ only_mutate = [
     "app/vision/agent.py",
     "app/agents/base.py",
     "app/state/memory_store.py",
+    # Phase 1 causal slice (orchestration/PHASE_01): PerceptEnvelope
+    # normalization and ActionIntent/OutcomeRecord linkage -- a parser field
+    # dropped silently, or an offset/status drifting undetected, is exactly
+    # the class of bug mutation testing exists to catch here.
+    "app/cognitive/percept.py",
+    "app/cognitive/action_intent.py",
 ]
 mutate_only_covered_lines = true
 pytest_add_cli_args_test_selection = [
@@ -92,6 +98,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_vision.py::TestVisionAgent::test_face_cascade_is_built_once_not_per_call",
     "tests/test_vision.py::TestVisionAgent::test_distance_uses_calibrated_focal_length_formula",
     "tests/test_vision.py::TestVisionAgent::test_run_appraisal_offloads_distance_calc_off_the_event_loop",
+    "tests/test_causal_slice.py",
 ]
 also_copy = ["pytest.ini", "tests"]
 max_stack_depth = 8
