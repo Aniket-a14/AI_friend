@@ -16683,3 +16683,39 @@ Verification:
 
 NOT done: No Package B files, configuration defaults, memory bridge, dream
 quarantine, provider benchmark, GPU benchmark, merge, or push was performed.
+
+## 2026-09-04 -- Codex Phase 07 arbitration fix round
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/cognitive/learning.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` and `ReflectionService` now share one
+  `LearningGovernor` instance and its proposal registry.
+- Configured external action dispatchers now receive typed
+  `ExternalActionIntent` values. Successful dispatch terminates cleanly;
+  missing, invalid, failed, or raising dispatch paths fail closed.
+- Surfaced memory projections preserve contradiction, outage, metadata, and
+  belief-record fields for downstream truth-aware activation adaptation.
+- Added regression tests for all three arbitration fixes and dispatcher error
+  handling.
+
+Verification:
+
+- Focused Phase 07 suite: 122 passed, 0 failures, 0 errors, 0 skipped.
+- Full backend suite: 2,332 ordinary tests passed; 8 NATS socket setup errors
+  occurred only under the restricted sandbox. The socket-permitted NATS rerun
+  passed all 8, so all 2,340 collected tests passed across the two runs.
+- `ruff check .` passed and `radon cc app/ -s -n D` reported no D, E, or F
+  findings.
+- Added and modified lines are pure 7-bit ASCII.
+
+NOT done: Package B behavior, full Phase 07 integration merge, push, and
+broader live-turn use of the composed temporal/planning/provider services.

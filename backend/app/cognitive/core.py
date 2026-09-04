@@ -152,6 +152,7 @@ class CognitiveService:
             graph_store=graph_db,
             pg_vector=memory_store,
             identity_manager=self.identity,
+            governor=self.learning_governor,
         )
         # Phase 2B: gives `WorkingMemoryStore` (built with a real Redis+
         # SQLite-fallback API but no production caller before this) an
@@ -433,6 +434,12 @@ class CognitiveService:
                                 "relevance": mem_item.get(
                                     "score", data.get("relevance", 1.0)
                                 ),
+                                "contradiction_state": mem_item.get(
+                                    "contradiction_state"
+                                ),
+                                "outage_flag": mem_item.get("outage_flag", False),
+                                "metadata": mem_item.get("metadata", {}),
+                                "belief_record": mem_item.get("belief_record"),
                             }
                         )
         else:
@@ -444,6 +451,10 @@ class CognitiveService:
                         "source": data.get("source"),
                         "timestamp": data.get("timestamp", 0),
                         "relevance": data.get("relevance", 1.0),
+                        "contradiction_state": data.get("contradiction_state"),
+                        "outage_flag": data.get("outage_flag", False),
+                        "metadata": data.get("metadata", {}),
+                        "belief_record": data.get("belief_record"),
                     }
                 )
 

@@ -59,6 +59,7 @@ def test_cognitive_service_composes_phase_services(cognitive_service):
         assert getattr(cognitive_service.pipeline, attribute) is getattr(
             cognitive_service, attribute
         )
+    assert cognitive_service.learning.governor is cognitive_service.learning_governor
 
 
 def test_pipeline_composition_has_scheduler_and_session_store(cognitive_service):
@@ -199,3 +200,82 @@ async def test_external_action_is_fail_closed():
         {"type": "error", "data": "External action blocked."},
         {"type": "done", "data": ""},
     ]
+
+
+@pytest.mark.asyncio
+async def test_external_action_dispatcher_receives_typed_intent():
+    """A configured dispatcher must receive and complete the typed action."""
+    dispatcher = MagicMock()
+    dispatcher.dispatch.return_value = {"status": "COMPLETED", "executed": True}
+    plan = ActionPlan(
+        action_type="EXTERNAL_ACT",
+        goal="ACT",
+        payload={
+            "action_id": "action-1",
+            "turn_id": "turn-1",
+            "tool_or_actuator": "lamp.dim",
+            "parameters": {"level": 0.3},
+        },
+    )
+
+    chunks = [
+        chunk
+        async for chunk in ActionService(
+            external_action_dispatcher=dispatcher
+        ).execute(plan)
+    ]
+
+    assert chunks == [{"type": "done", "data": ""}]
+    dispatcher.dispatch.assert_called_once()
+    intent = dispatcher.dispatch.call_args.args[0]
+    assert intent.action_id == "action-1"
+    assert intent.turn_id == "turn-1"
+    assert intent.tool_or_actuator == "lamp.dim"
+    assert intent.parameters == {"level": 0.3}
+
+
+@pytest.mark.asyncio
+async def test_external_action_dispatch_failure_emits_error_and_done():
+    """A dispatcher exception must terminate safely without leaking execution."""
+    dispatcher = MagicMock()
+    dispatcher.dispatch.side_effect = RuntimeError("executor unavailable")
+    plan = ActionPlan(
+        action_type="EXTERNAL_ACT",
+        goal="ACT",
+        payload={"tool_or_actuator": "lamp.dim"},
+    )
+
+    chunks = [
+        chunk
+        async for chunk in ActionService(
+            external_action_dispatcher=dispatcher
+        ).execute(plan)
+    ]
+
+    assert chunks == [
+        {"type": "error", "data": "executor unavailable"},
+        {"type": "done", "data": ""},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_memory_surfacing_preserves_epistemic_metadata(cognitive_service):
+    """Surfacing must retain truth fields for downstream activation adaptation."""
+    memory = {
+        "content": "The appointment moved.",
+        "score": 0.9,
+        "source": "conversation",
+        "created_at": 123.0,
+        "contradiction_state": "DISPUTED",
+        "outage_flag": True,
+        "metadata": {"record_type": "belief"},
+        "belief_record": {"claim": "appointment moved"},
+    }
+
+    await cognitive_service._on_memory_surfaced({"memories": [memory]})
+
+    stored = cognitive_service.surfaced_memories[-1]
+    assert stored["contradiction_state"] == "DISPUTED"
+    assert stored["outage_flag"] is True
+    assert stored["metadata"] == {"record_type": "belief"}
+    assert stored["belief_record"] == {"claim": "appointment moved"}
