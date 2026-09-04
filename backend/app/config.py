@@ -292,6 +292,7 @@ class AppSettings(BaseSettings):
     MEASURE_TRACE_FULL_PROMPTS: bool = False
 
     REFLECTION_ENABLED: bool = True
+    SYSTEM2_APPRAISAL_ENABLED: bool = True
     # Bucket 12 (voice remediation Phase 3): this gated `ReflectionService.
     # trigger_reflection` at zero, i.e. not at all -- the only thing
     # stopping back-to-back reflection passes during a fast-paced

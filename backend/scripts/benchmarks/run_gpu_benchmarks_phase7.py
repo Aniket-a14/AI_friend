@@ -176,6 +176,7 @@ async def _execute_single_turn(
     t0 = time.perf_counter()
     first_token_time: float | None = None
     causal_committed = False
+    pre_llm_delib_ms: float = 0.0
 
     async for item in svc.process_event(raw_event, workspace=snapshot):
         item_type = item.get("type")
@@ -189,11 +190,13 @@ async def _execute_single_turn(
                 and intent_data.get("workspace_revision", 0) > 0
             ):
                 causal_committed = True
+        elif item_type == "pipeline_telemetry":
+            pre_llm_delib_ms = float(item.get("data", {}).get("pre_llm_total_ms", 0.0))
 
     t_end = time.perf_counter()
     ttft_ms = ((first_token_time - t0) * 1000.0) if first_token_time else ((t_end - t0) * 1000.0)
     total_lat_ms = (t_end - t0) * 1000.0
-    delib_ms = ((first_token_time - t0) * 1000.0) if first_token_time else 0.0
+    delib_ms = pre_llm_delib_ms if pre_llm_delib_ms > 0 else ttft_ms
 
     return ttft_ms, total_lat_ms, delib_ms, causal_committed
 
@@ -219,6 +222,7 @@ async def run_bm_gpu_p7_01(
     Config.LLM_CHAT_MODEL = model_tag
     Config.LLM_FAST_MODEL = model_tag
     Config.REFLECTION_ENABLED = False
+    Config.SYSTEM2_APPRAISAL_ENABLED = False
 
     client = OllamaClient(base_url=base_url, model=model_tag)
     _reset_model_state(base_url=base_url, model=model_tag)
@@ -250,6 +254,18 @@ async def run_bm_gpu_p7_01(
         workspace_store = svc.workspace_store
         snapshot = await workspace_store.get_snapshot(user_id)
         assert snapshot.epoch > 0 or snapshot.revision > 0
+
+        # Warm-up live pipeline turn to populate SQLite tables and caches
+        print("Executing warm-up cognitive turn through pipeline...")
+        warmup_event = {
+            "id": "warmup-p7-gpu",
+            "type": "USER_MESSAGE",
+            "content": "Hello friend, nice to meet you!",
+            "user_id": user_id,
+            "metadata": {"turn_id": "warmup-turn-0"},
+        }
+        async for _ in svc.process_event(warmup_event, workspace=snapshot):
+            pass
 
         state_before = svc.state.get_context_snapshot()
 

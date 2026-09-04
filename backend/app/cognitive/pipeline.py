@@ -314,7 +314,7 @@ class CognitivePipeline:
             # Trigger System 2 deep appraisal in background (non-blocking).
             # A2: cancel any still-running prior appraisal so overlapping
             # tasks cannot clobber each other's writes to short-term affect.
-            if self.llm:
+            if self.llm and getattr(Config, "SYSTEM2_APPRAISAL_ENABLED", True):
                 if self._system2_task and not self._system2_task.done():
                     self._system2_task.cancel()
                 self._system2_task = asyncio.create_task(
