@@ -38,3 +38,8 @@ anthropic>=1.0.0,<2.0.0
 # app/api/voice.py and app/api/friend_data.py -- FastAPI raises at route
 # registration time (not just at request time) without this installed.
 python-multipart>=0.0.20,<1.0.0
+# Phase 5 (Package B fix round): app/llm/model_roles.py::validate_execution_result
+# checks a RoleExecutionRequest.schema_definition against the role's actual
+# parsed_output. A hand-rolled type/required checker would only ever cover the
+# subset of JSON Schema someone remembered to implement; this is the real spec.
+jsonschema>=4.25.0,<5.0.0
