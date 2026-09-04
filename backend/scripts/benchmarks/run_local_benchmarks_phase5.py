@@ -31,23 +31,11 @@ from app.cognitive.speech_intent import (
     TimelineMarkerKind,
     build_speech_intent,
 )
-from app.cognitive.vision_percept import (
-    DetectedObject,
-    FacialObservable,
-    IdentityEstimate,
-    SpatialRelation,
-    StructuredVisionPercept,
-    validate_vision_invariants,
-)
 from app.llm.model_manifest import ModelCapability
 from app.llm.model_roles import (
     FallbackStrategy,
     ModelRole,
     ProviderCapabilityNegotiator,
-)
-from app.voice.compiler import (
-    ElevenLabsVoiceCompiler,
-    GPTSoVITSVoiceCompiler,
 )
 from app.vision.adapters import (
     SpatialTrackingVisionAdapter,
@@ -101,7 +89,6 @@ def run_bm_loc_p5_01() -> dict[str, Any]:
         )
 
         t0 = time.perf_counter_ns()
-        payload, loss = compiler.compile(intent)
         _payload, loss = compiler.compile(intent)
         t1 = time.perf_counter_ns()
 
@@ -181,7 +168,6 @@ def run_bm_loc_p5_02() -> dict[str, Any]:
 
         # Verify brain invariant: envelope must NOT mutate affect or trust directly
         # and must not contain raw emotion assertions
-        if "affect" in envelope.data or "trust" in envelope.data:
         if "affect" in envelope.raw_payload or "trust" in envelope.raw_payload:
             corruption_detected = True
 
@@ -240,12 +226,10 @@ def run_bm_loc_p5_03() -> dict[str, Any]:
         cap = profiles[i % len(profiles)]
 
         t0 = time.perf_counter_ns()
-        strategy, details = negotiator.evaluate_capability(role, cap)
         _qualified, strategy, _details = negotiator.evaluate_capability(role, cap)
         t1 = time.perf_counter_ns()
 
         latencies_us.append((t1 - t0) / 1000.0)
-        assert isinstance(strategy, FallbackStrategy)
         assert strategy in [s.value for s in FallbackStrategy]
 
     latencies_us.sort()
@@ -317,7 +301,6 @@ def run_bm_loc_p5_04() -> dict[str, Any]:
         latencies_us.append((t1 - t0) / 1000.0)
 
         if intent.risk_level in (ActionRiskLevel.HIGH, ActionRiskLevel.CRITICAL) or intent.reversibility == ActionReversibility.IRREVERSIBLE:
-            if not allowed and "Authorization token required" in (reason or ""):
             if not allowed and "authorization_token is required" in (reason or "").lower():
                 unauthorized_high_risk_blocked += 1
         else:
@@ -374,8 +357,6 @@ def main() -> None:
     with open(out_path, "w", encoding="ascii") as f:
         json.dump(results, f, indent=2)
 
-    print("
-===================================================================")
     print("\n===================================================================")
     print(f"Overall Local Benchmark Verdict: {results['overall_verdict']}")
     print(f"Results saved to: {out_path}")
