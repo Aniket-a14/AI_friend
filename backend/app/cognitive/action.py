@@ -502,13 +502,20 @@ class ActionService:
     Enforces the Identity Protocol in LLM generations.
     """
 
-    def __init__(self, llm_service=None, memory_store=None, self_knowledge=None):
+    def __init__(
+        self,
+        llm_service=None,
+        memory_store=None,
+        self_knowledge=None,
+        external_action_dispatcher=None,
+    ):
         self.llm = llm_service
         self.memory = memory_store
         # Optional, like publish_cb. Absent, the self-grounding gate still runs
         # against surfaced memories and the user's message -- it simply has a
         # smaller vocabulary to count as grounded, and records no gaps.
         self.self_knowledge = self_knowledge
+        self.external_action_dispatcher = external_action_dispatcher
         self.publish_cb = None
 
     def _check_user_memory_grounding(
@@ -1826,7 +1833,23 @@ class ActionService:
             # Already triggered by CognitiveService
             yield {"type": "done", "data": ""}
 
+        elif plan.action_type == "WAIT":
+            async for out in self._execute_wait(plan):
+                yield out
+
+        elif plan.action_type == "EXTERNAL_ACT":
+            # External action realization is intentionally fail-closed until
+            # a typed, authorized dispatcher contract is supplied.
+            logger.warning("[Action] External action blocked: %s", plan.goal)
+            yield {"type": "error", "data": "External action blocked."}
+            yield {"type": "done", "data": ""}
+
         else:
             logger.warning(f"[Action] Unrecognized action: {plan.action_type}")
             yield {"type": "error", "data": "Unknown operation."}
             yield {"type": "done", "data": ""}
+
+    async def _execute_wait(self, plan: ActionPlan) -> AsyncGenerator[dict[str, Any], None]:
+        """Realize a WAIT decision as terminal silence."""
+        del plan
+        yield {"type": "done", "data": ""}

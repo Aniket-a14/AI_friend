@@ -11,8 +11,16 @@ import asyncio
 import logging
 import time
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 
+from ..config import Config
+from ..llm.adapter_gate import (
+    OfflineAdapterGate,
+    compute_constitution_digest,
+    compute_prompt_digest,
+)
+from ..llm.model_roles import ProviderCapabilityNegotiator
 from ..metrics import SubjectMetrics
 from ..persona.biography import (
     find_biography_file,
@@ -24,17 +32,24 @@ from ..persona.biography import (
 from ..persona.history_migration import migrate_history_memories
 from ..state import StateService
 from ..state.self_knowledge_store import SelfKnowledgeStore
+from ..state.temporal_store import TemporalMemoryStore
 from ..state.working_memory_store import WorkingMemoryStore
+from ..state.workspace_store import SQLiteWorkspaceStore
 from .action import ActionService
 from .appraisal import AppraisalEngine, AppraisalVector
+from .background_scheduler import BackgroundScheduler
 from .decision import DecisionService
+from .external_action import ExternalActionDispatcher
 from .identity import IdentityManager
 from .learning import ReflectionService
+from .learning_governance import LearningGovernor
 from .memory_activation import MemoryActivation
 from .percept import PerceptEnvelope
 from .perception import PerceptionService
 from .pipeline import CognitivePipeline, WorkspaceSnapshotLike
+from .planning import DeterministicPlanExecutor, DeterministicPlanVerifier
 from .reappraisal import ReappraisalEngine
+from .simulation import EpisodicSimulator
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +75,45 @@ class CognitiveService:
         self.identity_store = identity_store
         # Kept so the biography can be seeded into episodic memory at startup.
         self.memory_store = memory_store
+
+        # Phase 01-06 runtime services are owned by this composition root.
+        # A configured identity directory is the deployment data volume; the
+        # in-memory fallback keeps local callers and isolated tests harmless.
+        runtime_state_dir = base_path or getattr(Config, "IDENTITY_BASE_PATH", None)
+        if runtime_state_dir:
+            runtime_state_path = Path(runtime_state_dir)
+            workspace_db_path = str(runtime_state_path / "workspace.db")
+            temporal_db_path = str(runtime_state_path / "temporal_memory.db")
+            session_db_path = str(runtime_state_path / "working_memory.db")
+        else:
+            workspace_db_path = ":memory:"
+            temporal_db_path = ":memory:"
+            session_db_path = "working_memory.db"
+
+        self.workspace_store = SQLiteWorkspaceStore(
+            getattr(Config, "WORKSPACE_DB_PATH", None) or workspace_db_path
+        )
+        self.temporal_memory_store = TemporalMemoryStore(
+            getattr(Config, "TEMPORAL_MEMORY_DB_PATH", None) or temporal_db_path
+        )
+        self.scheduler = BackgroundScheduler()
+        self.plan_verifier = DeterministicPlanVerifier()
+        self.plan_executor = DeterministicPlanExecutor()
+        self.episodic_simulator = EpisodicSimulator()
+        self.learning_governor = LearningGovernor()
+        model_tag = Config.LLM_CHAT_MODEL or Config.LLM_FAST_MODEL
+        self.offline_adapter_gate = OfflineAdapterGate(
+            incumbent_adapter_id="base",
+            incumbent_base_model_tag=model_tag,
+            incumbent_prompt_digest=compute_prompt_digest(
+                self.identity.get_persona_prompt()
+            ),
+            incumbent_constitution_digest=compute_constitution_digest(
+                self.identity.persona
+            ),
+        )
+        self.provider_capability_negotiator = ProviderCapabilityNegotiator()
+        self.external_action_dispatcher = ExternalActionDispatcher()
         self.perception = PerceptionService(llm_service=llm_service)
         self.appraisal = AppraisalEngine()  # §1: OCC/Lazarus/EMA
         self.reappraisal = ReappraisalEngine()  # Gross/Bosse feedback loop
@@ -91,6 +145,7 @@ class CognitiveService:
             llm_service=llm_service,
             memory_store=memory_store,
             self_knowledge=self.self_knowledge,
+            external_action_dispatcher=self.external_action_dispatcher,
         )
         self.learning = ReflectionService(
             llm_service=llm_service,
@@ -101,7 +156,7 @@ class CognitiveService:
         # Phase 2B: gives `WorkingMemoryStore` (built with a real Redis+
         # SQLite-fallback API but no production caller before this) an
         # actual producer -- per-turn `SessionState`.
-        self.session_store = WorkingMemoryStore()
+        self.session_store = WorkingMemoryStore(db_path=session_db_path)
         self.pipeline = CognitivePipeline(
             perception=self.perception,
             appraisal=self.appraisal,
@@ -113,6 +168,16 @@ class CognitiveService:
             llm_service=llm_service,
             reappraisal=self.reappraisal,
             session_store=self.session_store,
+            scheduler=self.scheduler,
+            workspace_store=self.workspace_store,
+            temporal_memory_store=self.temporal_memory_store,
+            plan_verifier=self.plan_verifier,
+            plan_executor=self.plan_executor,
+            episodic_simulator=self.episodic_simulator,
+            learning_governor=self.learning_governor,
+            offline_adapter_gate=self.offline_adapter_gate,
+            provider_capability_negotiator=self.provider_capability_negotiator,
+            external_action_dispatcher=self.external_action_dispatcher,
         )
         self.action.publish_cb = self.publish
         self.surfaced_memories = []

@@ -16644,3 +16644,42 @@ Verification:
 NOT done: No production code refactoring or new feature implementation was
 initiated during this audit pass per line 212 of `GEMINI_FINAL_AUDIT_ORCHESTRATOR.md`.
 No git push was performed. Recommended next stage: PRODUCTION RUNTIME CONSOLIDATION.
+
+## 2026-09-04 -- Codex Phase 07 Package A runtime composition
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` now owns and forwards the Phase 01-06 workspace, temporal
+  memory, scheduler, planning, simulation, learning, adapter, provider, and
+  external-action services. SQLite paths use the configured identity data
+  directory when present, with safe local fallbacks.
+- Foreground chat turns obtain an authoritative workspace snapshot. Session
+  dual-write refreshes that snapshot before Stage 6, so the committed intent
+  carries the current epoch and revision.
+- WAIT is realized as one terminal empty `done` chunk. EXTERNAL_ACT and unknown
+  action types terminate with an error and done signal without execution.
+
+Verification:
+
+- Focused suite: 119 passed, 0 failures, 0 errors in JUnit XML.
+- Full backend suite: 2,337 passed, 0 failures, 0 errors, 0 skipped in the
+  socket-permitted rerun. The sandboxed rerun had 8 known NATS socket setup
+  errors and no assertion failures.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no rank D, E, or F findings.
+- New code and the new test are pure 7-bit ASCII. Existing non-ASCII bytes in
+  untouched legacy portions were not rewritten.
+
+NOT done: No Package B files, configuration defaults, memory bridge, dream
+quarantine, provider benchmark, GPU benchmark, merge, or push was performed.
