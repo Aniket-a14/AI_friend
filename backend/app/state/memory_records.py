@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 import time
-from typing import Literal
+from typing import Literal, overload
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class MemoryStoreError(Exception):
+    """Base exception raised by the temporal memory persistence boundary."""
+
+
+class DuplicateRecordError(MemoryStoreError):
+    """Raised when a record identifier already exists."""
+
+
+class RecordNotFoundError(MemoryStoreError):
+    """Raised when a requested temporal record does not exist."""
+
+
+class InvalidIntervalError(MemoryStoreError, ValueError):
+    """Raised when a temporal transition would create an invalid interval."""
 
 
 class ExperienceRecord(BaseModel):
@@ -48,11 +64,11 @@ class ProcedureRecord(BaseModel):
 
     procedure_id: str
     name: str
+    steps: list[str] = Field(default_factory=list)
     preconditions: list[str] = Field(default_factory=list)
-    expected_effects: list[str] = Field(default_factory=list)
-    success_count: int = 0
-    failure_count: int = 0
-    rollback_pointer: str | None = None
+    postconditions: list[str] = Field(default_factory=list)
+    created_at: float = Field(default_factory=time.time)
+    status: str = "ACTIVE"
 
 
 ContradictionType = Literal["ELABORATION", "UPDATE", "CORRECTION", "CONFLICT"]
@@ -79,29 +95,66 @@ _TEMPORAL_PROGRESSION_MARKERS = (
 )
 
 
+@overload
 def classify_contradiction(
     existing: BeliefRecord,
-    new_subject: str,
+    incoming: BeliefRecord,
+    new_predicate: None = None,
+    new_object: None = None,
+    explicit_correction: bool = False,
+) -> ContradictionType: ...
+
+
+@overload
+def classify_contradiction(
+    existing: BeliefRecord,
+    incoming: str,
     new_predicate: str,
     new_object: str,
+    explicit_correction: bool = False,
+) -> ContradictionType: ...
+
+
+def classify_contradiction(
+    existing: BeliefRecord,
+    incoming: BeliefRecord | str,
+    new_predicate: str | None = None,
+    new_object: str | None = None,
     explicit_correction: bool = False,
 ) -> ContradictionType:
     """Classify an assertion against a belief with the same semantic slot.
 
-    Temporal progression is explicit in this small classifier: a closed prior
-    interval or a present-time marker on the incoming object makes a different
-    value an update. An unresolved different value otherwise remains a conflict
-    instead of silently overwriting truth.
+    A newer, equally confident assertion of a different value is normally a
+    slot update. Simultaneous assertions without temporal precedence remain a
+    conflict. The legacy scalar arguments remain supported for callers that
+    have not yet constructed an incoming record.
     """
-    if existing.subject != new_subject or existing.predicate != new_predicate:
+    if isinstance(incoming, BeliefRecord):
+        new_subject = incoming.subject
+        predicate = incoming.predicate
+        object_value = incoming.object
+        has_precedence = (
+            incoming.valid_from > existing.valid_from
+            or incoming.recorded_at > existing.recorded_at
+        )
+        can_update = incoming.confidence >= existing.confidence and has_precedence
+    else:
+        if new_predicate is None or new_object is None:
+            raise TypeError("Legacy classification requires predicate and object")
+        new_subject = incoming
+        predicate = new_predicate
+        object_value = new_object
+        normalized_object = object_value.lower().strip()
+        can_update = existing.valid_until is not None or normalized_object.startswith(
+            _TEMPORAL_PROGRESSION_MARKERS
+        )
+
+    if existing.subject != new_subject or existing.predicate != predicate:
         raise ValueError("Contradiction classification requires matching subject and predicate")
-    if existing.object == new_object:
+    if existing.object == object_value:
         return "ELABORATION"
     if explicit_correction:
         return "CORRECTION"
-    normalized_object = new_object.lower().strip()
-    if existing.valid_until is not None or normalized_object.startswith(
-        _TEMPORAL_PROGRESSION_MARKERS
-    ):
+    if can_update:
         return "UPDATE"
     return "CONFLICT"

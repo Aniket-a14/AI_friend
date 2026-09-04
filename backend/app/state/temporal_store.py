@@ -8,9 +8,19 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
-from .memory_records import BeliefRecord, ContradictionDecision, ExperienceRecord
+from .memory_records import (
+    BeliefRecord,
+    ContradictionDecision,
+    DuplicateRecordError,
+    ExperienceRecord,
+    InvalidIntervalError,
+    MemoryStoreError,
+    ProcedureRecord,
+    RecordNotFoundError,
+)
 
 
 class TemporalMemoryStore:
@@ -37,11 +47,12 @@ class TemporalMemoryStore:
 
     def _initialize_schema(self) -> None:
         with self._lock:
-            self._connection.execute("PRAGMA busy_timeout = 5000")
-            if self.db_path != ":memory:":
-                self._connection.execute("PRAGMA journal_mode = WAL")
-            self._connection.executescript(
-                """
+            try:
+                self._connection.execute("PRAGMA busy_timeout = 5000")
+                if self.db_path != ":memory:":
+                    self._connection.execute("PRAGMA journal_mode = WAL")
+                self._connection.executescript(
+                    """
                 CREATE TABLE IF NOT EXISTS experiences (
                     record_id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
@@ -83,8 +94,20 @@ class TemporalMemoryStore:
                     confidence REAL NOT NULL,
                     recorded_at REAL NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS procedures (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    steps_json TEXT NOT NULL,
+                    preconditions_json TEXT,
+                    postconditions_json TEXT,
+                    created_at TEXT NOT NULL,
+                    status TEXT NOT NULL
+                );
                 """
-            )
+                )
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
 
     async def store_experience(self, record: ExperienceRecord) -> None:
         """Append an experience once; duplicate identifiers are rejected."""
@@ -92,8 +115,8 @@ class TemporalMemoryStore:
 
     def _store_experience_sync(self, record: ExperienceRecord) -> None:
         with self._lock:
-            self._begin_write()
             try:
+                self._begin_write()
                 self._connection.execute(
                     """
                     INSERT INTO experiences (
@@ -117,6 +140,9 @@ class TemporalMemoryStore:
                     ),
                 )
                 self._connection.commit()
+            except sqlite3.Error as error:
+                self._connection.rollback()
+                self._raise_sqlite_error(error)
             except BaseException:
                 self._connection.rollback()
                 raise
@@ -127,9 +153,12 @@ class TemporalMemoryStore:
 
     def _get_experience_sync(self, record_id: str) -> ExperienceRecord | None:
         with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM experiences WHERE record_id = ?", (record_id,)
-            ).fetchone()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM experiences WHERE record_id = ?", (record_id,)
+                ).fetchone()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
         if row is None:
             return None
         return ExperienceRecord(
@@ -155,10 +184,13 @@ class TemporalMemoryStore:
 
     def _store_belief_sync(self, record: BeliefRecord) -> None:
         with self._lock:
-            self._begin_write()
             try:
+                self._begin_write()
                 self._insert_belief(record)
                 self._connection.commit()
+            except sqlite3.Error as error:
+                self._connection.rollback()
+                self._raise_sqlite_error(error)
             except BaseException:
                 self._connection.rollback()
                 raise
@@ -169,34 +201,45 @@ class TemporalMemoryStore:
 
     def _get_belief_sync(self, record_id: str) -> BeliefRecord | None:
         with self._lock:
-            row = self._connection.execute(
-                "SELECT * FROM beliefs WHERE record_id = ?", (record_id,)
-            ).fetchone()
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM beliefs WHERE record_id = ?", (record_id,)
+                ).fetchone()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
         return self._belief_from_row(row) if row is not None else None
 
     async def query_current_beliefs(
-        self, subject: str | None = None, as_of: float | None = None
+        self, subject: str | None = None, as_of: datetime | float | None = None
     ) -> list[BeliefRecord]:
-        """Return active beliefs valid at ``as_of`` or at the current time."""
-        query_time = time.time() if as_of is None else as_of
+        """Return active beliefs now or beliefs valid at a supplied time."""
+        query_time = time.time() if as_of is None else self._as_timestamp(as_of)
         return await asyncio.to_thread(
-            self._query_current_beliefs_sync, subject, query_time
+            self._query_current_beliefs_sync, subject, query_time, as_of is not None
         )
 
     def _query_current_beliefs_sync(
-        self, subject: str | None, query_time: float
+        self, subject: str | None, query_time: float, includes_superseded: bool
     ) -> list[BeliefRecord]:
-        sql = (
-            "SELECT * FROM beliefs WHERE status = 'ACTIVE' "
-            "AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)"
-        )
+        if includes_superseded:
+            sql = (
+                "SELECT * FROM beliefs WHERE status IN ('ACTIVE', 'SUPERSEDED') "
+                "AND valid_from <= ? AND (valid_until IS NULL OR valid_until > ?)"
+            )
+        else:
+            sql = "SELECT * FROM beliefs WHERE status = 'ACTIVE'"
         parameters: tuple[object, ...] = (query_time, query_time)
+        if not includes_superseded:
+            parameters = ()
         if subject is not None:
             sql += " AND subject = ?"
             parameters += (subject,)
         sql += " ORDER BY valid_from, recorded_at, record_id"
         with self._lock:
-            rows = self._connection.execute(sql, parameters).fetchall()
+            try:
+                rows = self._connection.execute(sql, parameters).fetchall()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
         return [self._belief_from_row(row) for row in rows]
 
     async def query_historical_beliefs(
@@ -215,7 +258,10 @@ class TemporalMemoryStore:
             parameters = (subject,)
         sql += " ORDER BY recorded_at, record_id"
         with self._lock:
-            rows = self._connection.execute(sql, parameters).fetchall()
+            try:
+                rows = self._connection.execute(sql, parameters).fetchall()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
         return [self._belief_from_row(row) for row in rows]
 
     async def apply_contradiction(
@@ -230,14 +276,18 @@ class TemporalMemoryStore:
         if decision.new_record_id != new_record.record_id:
             raise ValueError("Decision new_record_id must match new_record.record_id")
         with self._lock:
-            self._begin_write()
             try:
+                self._begin_write()
                 existing = self._require_belief(decision.existing_record_id)
                 if existing.status != "ACTIVE":
                     raise ValueError(
                         "Contradiction transitions require an active existing belief"
                     )
                 if decision.contradiction_type == "UPDATE":
+                    if new_record.valid_from < existing.valid_from:
+                        raise InvalidIntervalError(
+                            "An update cannot start before the belief it supersedes"
+                        )
                     self._connection.execute(
                         """
                         UPDATE beliefs
@@ -307,9 +357,70 @@ class TemporalMemoryStore:
                         ),
                     )
                 self._connection.commit()
+            except sqlite3.Error as error:
+                self._connection.rollback()
+                self._raise_sqlite_error(error)
             except BaseException:
                 self._connection.rollback()
                 raise
+
+    async def store_procedure(self, record: ProcedureRecord) -> str:
+        """Persist a learned procedure and return its stable identifier."""
+        return await asyncio.to_thread(self._store_procedure_sync, record)
+
+    def _store_procedure_sync(self, record: ProcedureRecord) -> str:
+        with self._lock:
+            try:
+                self._begin_write()
+                self._connection.execute(
+                    """
+                    INSERT INTO procedures (
+                        id, name, steps_json, preconditions_json,
+                        postconditions_json, created_at, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        record.procedure_id,
+                        record.name,
+                        json.dumps(record.steps),
+                        json.dumps(record.preconditions),
+                        json.dumps(record.postconditions),
+                        str(record.created_at),
+                        record.status,
+                    ),
+                )
+                self._connection.commit()
+            except sqlite3.Error as error:
+                self._connection.rollback()
+                self._raise_sqlite_error(error)
+            except BaseException:
+                self._connection.rollback()
+                raise
+        return record.procedure_id
+
+    async def get_procedure(self, procedure_id: str) -> ProcedureRecord | None:
+        """Return a persisted procedure, if it exists."""
+        return await asyncio.to_thread(self._get_procedure_sync, procedure_id)
+
+    def _get_procedure_sync(self, procedure_id: str) -> ProcedureRecord | None:
+        with self._lock:
+            try:
+                row = self._connection.execute(
+                    "SELECT * FROM procedures WHERE id = ?", (procedure_id,)
+                ).fetchone()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
+        if row is None:
+            return None
+        return ProcedureRecord(
+            procedure_id=str(row["id"]),
+            name=str(row["name"]),
+            steps=list(json.loads(row["steps_json"])),
+            preconditions=list(json.loads(row["preconditions_json"] or "[]")),
+            postconditions=list(json.loads(row["postconditions_json"] or "[]")),
+            created_at=float(row["created_at"]),
+            status=str(row["status"]),
+        )
 
     async def close(self) -> None:
         """Close the SQLite connection after outstanding work completes."""
@@ -317,7 +428,10 @@ class TemporalMemoryStore:
 
     def _close_sync(self) -> None:
         with self._lock:
-            self._connection.close()
+            try:
+                self._connection.close()
+            except sqlite3.Error as error:
+                self._raise_sqlite_error(error)
 
     def _begin_write(self) -> None:
         self._connection.execute("BEGIN IMMEDIATE")
@@ -352,8 +466,24 @@ class TemporalMemoryStore:
             "SELECT * FROM beliefs WHERE record_id = ?", (record_id,)
         ).fetchone()
         if row is None:
-            raise KeyError(f"Belief record {record_id!r} does not exist")
+            raise RecordNotFoundError(f"Belief record {record_id!r} does not exist")
         return self._belief_from_row(row)
+
+    @staticmethod
+    def _as_timestamp(value: datetime | float) -> float:
+        """Convert API time values to the REAL values used by SQLite."""
+        if isinstance(value, datetime):
+            return value.timestamp()
+        return float(value)
+
+    @staticmethod
+    def _raise_sqlite_error(error: sqlite3.Error) -> None:
+        """Translate SQLite implementation failures to storage domain errors."""
+        if isinstance(error, sqlite3.IntegrityError):
+            message = str(error)
+            if "UNIQUE constraint failed" in message or "PRIMARY KEY" in message:
+                raise DuplicateRecordError(message) from error
+        raise MemoryStoreError(str(error)) from error
 
     @staticmethod
     def _belief_from_row(row: sqlite3.Row) -> BeliefRecord:

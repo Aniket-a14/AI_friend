@@ -16170,3 +16170,36 @@ Verification:
 **NOT done:** Package B integration, the opt-in runtime wiring, GPU benchmarks,
 merge, and push remain outside this Package A worktree scope.
 
+### 2026-09-04 -- Codex Phase 02 Package A fix round
+
+Changed files:
+
+- `backend/app/state/memory_records.py`
+- `backend/app/state/temporal_store.py`
+- `backend/tests/test_memory_truth.py`
+- `orchestration/PHASE_02/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Historical `as_of` reads now return a superseded belief when its valid-time
+  interval contains the requested time; current reads remain ACTIVE-only.
+- Same-slot beliefs with equal or higher incoming confidence and temporal
+  progression classify as UPDATE. Simultaneous ambiguous assertions remain
+  CONFLICT.
+- UPDATE rejects a replacement that begins before the existing belief with
+  `InvalidIntervalError`. The store now exposes typed persistence failures and
+  persists `ProcedureRecord` values in a procedures table.
+- Added exact interval-boundary, historical supersession, procedure round-trip,
+  domain error, and racing-UPDATE tests.
+
+Verification:
+
+- Focused memory-truth suite: 15/15 passed.
+- Ruff passed for `app/state/` and `test_memory_truth.py`.
+- Full-suite JUnit recorded 1,924 tests, zero failures, and eight errors. Each
+  error was an existing NATS account fixture denied permission to bind
+  `127.0.0.1` by this environment; no assertion failure was observed.
+
+**NOT done:** Package B integration, runtime toggle wiring, GPU validation,
+merge, push, and remote CI remain outside this scoped fix round.
