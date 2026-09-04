@@ -1,0 +1,47 @@
+{
+  "phase": "PHASE_07",
+  "timestamp": 1788544651.4103181,
+  "benchmarks": [
+    {
+      "id": "BM-LOC-P7-01",
+      "name": "Runtime Composition & Initial Deliberation Overhead",
+      "iterations": 1000,
+      "mean_latency_ms": 1.707,
+      "p50_latency_ms": 1.556,
+      "p95_latency_ms": 2.294,
+      "p99_latency_ms": 3.973,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P7-02",
+      "name": "Action Selection & WAIT Action Silence Fidelity",
+      "iterations": 1000,
+      "mean_latency_us": 0.9,
+      "p50_latency_us": 0.88,
+      "p95_latency_us": 1.04,
+      "p99_latency_us": 1.12,
+      "silence_fidelity_pct": 100.0,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P7-03",
+      "name": "Epistemic Dream Quarantine Verification",
+      "iterations": 500,
+      "dream_memories_committed": 0,
+      "quarantine_compliance_pct": 100.0,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P7-04",
+      "name": "Governed Learning & Reflection Proposal Review Latency",
+      "iterations": 1000,
+      "mean_latency_us": 23.77,
+      "p50_latency_us": 20.25,
+      "p95_latency_us": 33.79,
+      "p99_latency_us": 47.33,
+      "rollback_fidelity_pct": 100.0,
+      "verdict": "PASS"
+    }
+  ],
+  "overall_verdict": "PASS"
+}
