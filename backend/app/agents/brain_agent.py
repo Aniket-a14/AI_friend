@@ -8,8 +8,15 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from ..cognitive import CognitiveService
+from ..cognitive import CognitiveService, percept
+from ..cognitive.action_intent import (
+    ActionIntent,
+    OutcomeRecord,
+    OutcomeStatus,
+    build_outcome_record,
+)
 from ..cognitive.evidence import Evidence
+from ..cognitive.percept import PerceptEnvelope
 from ..cognitive.somatic import SomaticAppraiser
 from ..config import Config
 from ..contracts import (
@@ -133,6 +140,22 @@ class BrainAgent(BaseAgent):
         self.last_audio_progress: AudioPlaybackProgress | None = None
         self.last_assistant_response: str | None = None
         self._active_response_turn_id: str | None = None
+        # Phase 1 causal slice (§22, §38): the ActionIntent Stage 6 committed
+        # for the turn currently generating/playing, and the last terminal
+        # OutcomeRecord emitted for one. Both are read-mostly diagnostics
+        # today -- nothing durably persists them yet (that is
+        # `WorkspaceStore`'s job, a parallel work package) -- but every
+        # `_emit_outcome_record` call binds back to `_active_action_intent`,
+        # closing the percept -> decision -> outcome trace within one process.
+        self.last_percept: PerceptEnvelope | None = None
+        self._active_action_intent: ActionIntent | None = None
+        self._last_outcome_record: OutcomeRecord | None = None
+        # FIX-CLD-03: `_last_outcome_record` above is overwritten by the next
+        # turn's outcome, so nothing durable let a caller look back at what
+        # happened on an earlier turn once a new one started -- this is that
+        # durable (in-process, not yet persisted -- WorkspaceStore's job)
+        # ledger, queryable via `get_outcome_history`.
+        self._outcome_history: list[OutcomeRecord] = []
         # Bucket 1 (VOICE_REMEDIATION_PLAN.md): stamped on the first playback
         # progress frame of each turn (see _on_audio_playback_progress) and
         # read by _on_chat_input's barge-in grace period below.
@@ -261,6 +284,7 @@ class BrainAgent(BaseAgent):
 
     async def _on_vision_description(self, data: dict[str, Any]):
         """VLM: Rich semantic visual context from the Visual Appraisal pipeline."""
+        self.last_percept = percept.from_vision_description(data)
         description = data.get("description", "")
         source = data.get("source", "unknown")
         if description:
@@ -308,13 +332,17 @@ class BrainAgent(BaseAgent):
         genuinely flush/stop playback rather than only flipping an internal flag.
         """
         try:
+            self.last_percept = percept.from_facial_reflex(data)
             await self.cognitive_core.state.apply_facial_reflex(data)
 
             reflex_name = data.get("name")
             async with self._turn_state_lock:
                 active_turn_id = self._active_response_turn_id
-            if active_turn_id and self.cognitive_core.decision.is_facial_reflex_interruption_worthy(
-                reflex_name
+            if (
+                active_turn_id
+                and self.cognitive_core.decision.is_facial_reflex_interruption_worthy(
+                    reflex_name
+                )
             ):
                 stop_msg = AudioStop(
                     interrupt=True,
@@ -347,6 +375,66 @@ class BrainAgent(BaseAgent):
         except Exception:
             logger.exception("[Brain] Somatic appraisal failed; visual context kept.")
 
+    async def _emit_outcome_record(
+        self,
+        intent: ActionIntent | None,
+        *,
+        status: OutcomeStatus,
+        actual_delivered_text: str | None = None,
+        character_offset: int = 0,
+        error: str | None = None,
+    ) -> OutcomeRecord | None:
+        """Phase 1 causal slice (§22, §38): the terminal record binding what
+        actually happened back to the `ActionIntent` Stage 6 committed.
+        `intent=None` means this turn never reached Stage 6 (e.g. a
+        subconscious/proactive turn, which bypasses `CognitivePipeline`
+        entirely) -- there is nothing to attribute an outcome to, so this is a
+        deliberate no-op rather than fabricating an orphaned record.
+        """
+        if intent is None:
+            logger.debug(
+                "[Brain] Outcome status=%s with no active ActionIntent; skipping record.",
+                status,
+            )
+            return None
+        record = build_outcome_record(
+            intent,
+            status=status,
+            actual_delivered_text=actual_delivered_text,
+            character_offset=character_offset,
+            error=error,
+        )
+        self._last_outcome_record = record
+        # FIX-CLD-03: `getattr(..., None)` rather than a direct read -- some
+        # test doubles build a `BrainAgent` via `object.__new__`, bypassing
+        # `__init__` (see test_barge_in_truncation.py), so this attribute may
+        # not exist yet on `self`. Matches this file's existing pattern for
+        # `_active_action_intent`/`_active_response_turn_id`.
+        history = getattr(self, "_outcome_history", None)
+        if history is None:
+            history = []
+            self._outcome_history = history
+        history.append(record)
+        logger.info(
+            "[Brain] OutcomeRecord id=%s intent=%s status=%s offset=%d elapsed_ms=%.1f",
+            record.outcome_id,
+            record.intent_id,
+            record.status,
+            record.character_offset,
+            record.elapsed_ms,
+        )
+        return record
+
+    def get_outcome_history(self, turn_id: str) -> list[OutcomeRecord]:
+        """FIX-CLD-03: every terminal `OutcomeRecord` emitted for `turn_id`,
+        in emission order. A turn normally has exactly one (COMPLETED,
+        CANCELLED, or a single TRUNCATED), but this does not assume that --
+        it filters the full ledger rather than tracking a per-turn slot, so
+        it stays correct even if that ever changes.
+        """
+        history = getattr(self, "_outcome_history", None) or []
+        return [record for record in history if record.turn_id == turn_id]
+
     async def _cancel_active_generation(self, reason: str):
         """Cancel the in-flight generation task and wait for it to fully unwind.
 
@@ -376,6 +464,21 @@ class BrainAgent(BaseAgent):
                 if self._active_generation_task is task:
                     self._active_generation_task = None
 
+        # Phase 1 causal slice: a cancellation that landed before any content
+        # was ever produced has no truncation offset for
+        # _truncate_interrupted_reply to compute (its own branches both
+        # require last_assistant_response) -- record the outcome here instead,
+        # while the intent that was cancelled is still known. A cancellation
+        # that landed after some content streamed defers to
+        # _truncate_interrupted_reply, called immediately after this by the
+        # only production caller (_on_audio_stop), so the turn gets exactly
+        # one terminal record rather than two disagreeing ones.
+        async with self._turn_state_lock:
+            produced_nothing = not self.last_assistant_response
+            intent = getattr(self, "_active_action_intent", None)
+        if produced_nothing:
+            await self._emit_outcome_record(intent, status="CANCELLED", error=reason)
+
     async def _truncate_interrupted_reply(self):
         """Rewrite the stored assistant reply down to what was actually
         heard, using `last_audio_progress`, then clear both fields.
@@ -395,6 +498,7 @@ class BrainAgent(BaseAgent):
         """
         async with self._turn_state_lock:
             progress = self.last_audio_progress
+            intent = getattr(self, "_active_action_intent", None)
             if progress and not progress.completed and self.last_assistant_response:
                 offset = progress.character_offset
                 if 0 < offset < len(self.last_assistant_response):
@@ -408,6 +512,12 @@ class BrainAgent(BaseAgent):
                         await self.conversation_store.update_last_assistant_message(
                             truncated_text
                         )
+                    await self._emit_outcome_record(
+                        intent,
+                        status="TRUNCATED",
+                        actual_delivered_text=truncated_text,
+                        character_offset=offset,
+                    )
             elif not progress and self.last_assistant_response:
                 # No real playback progress, so we do not know how much of
                 # the reply was actually heard -- and we no longer guess.
@@ -435,6 +545,16 @@ class BrainAgent(BaseAgent):
                     "reply (%d chars) rather than guessing a cut point.",
                     len(self.last_assistant_response),
                 )
+                # Still a terminal record for this intent -- best-known
+                # offset (the full text) rather than no record at all, same
+                # honesty tradeoff as the log line above: this is what we
+                # believe was delivered, not a claim that it was verified.
+                await self._emit_outcome_record(
+                    intent,
+                    status="TRUNCATED",
+                    actual_delivered_text=self.last_assistant_response,
+                    character_offset=len(self.last_assistant_response),
+                )
 
             # Cleared however this turn resolved. It was previously reset
             # only on the branch that actually truncated, so a stop that
@@ -459,6 +579,7 @@ class BrainAgent(BaseAgent):
         Returns:
             The newly created task
         """
+        cancelled_a_running_turn = False
         async with self._generation_lock:
             # Cancel and await prior task if it exists
             prior_task = self._active_generation_task
@@ -473,11 +594,27 @@ class BrainAgent(BaseAgent):
                     logger.exception(
                         "Previous generation task raised while being cancelled"
                     )
+                cancelled_a_running_turn = True
 
             # Create and assign new task while still holding the lock
             new_task = asyncio.create_task(coro)
             self._active_generation_task = new_task
-            return new_task
+
+        if cancelled_a_running_turn:
+            # FIX-CLD-05: a new incoming turn preempting one still in flight
+            # never called `_cancel_active_generation`/`_truncate_interrupted_reply`
+            # (those only run on `_on_audio_stop`'s path), so the replaced
+            # turn's ActionIntent previously got no terminal record at all --
+            # its partial `last_assistant_response` is simply overwritten by
+            # `_process_chat_input_flow`'s reset for the new turn. Read
+            # before returning: `new_task` (`coro`) has only been scheduled
+            # above, not yet run, so `_active_action_intent` here is still
+            # the interrupted turn's own, never the new one's.
+            async with self._turn_state_lock:
+                intent = getattr(self, "_active_action_intent", None)
+            await self._emit_outcome_record(intent, status="CANCELLED", error=reason)
+
+        return new_task
 
     async def _on_chat_input(self, message: dict[str, Any]):
         now = datetime.now()
@@ -492,6 +629,8 @@ class BrainAgent(BaseAgent):
         except Exception:
             logger.exception("Unexpected error processing chat.input")
             return
+
+        self.last_percept = percept.from_chat_input(msg.model_dump())
 
         # If it is not a subconscious pulse, publish a confirmed stop to silence any playing voice agent audio.
         #
@@ -529,9 +668,14 @@ class BrainAgent(BaseAgent):
         # pop, or brief echo tail before echoCancellation has settled.
         within_onset_grace = (
             self._last_audio_onset_at is not None
-            and (time.time() - self._last_audio_onset_at) < Config.BARGE_IN_ONSET_GRACE_S
+            and (time.time() - self._last_audio_onset_at)
+            < Config.BARGE_IN_ONSET_GRACE_S
         )
-        if not is_subconscious and not speculative_intent_pending and not within_onset_grace:
+        if (
+            not is_subconscious
+            and not speculative_intent_pending
+            and not within_onset_grace
+        ):
             stop_msg = AudioStop(
                 interrupt=True,
                 speculative=False,
@@ -541,7 +685,11 @@ class BrainAgent(BaseAgent):
                 utterance_id=msg.utterance_id,
             )
             await self.publish(Topics.AUDIO_STOP, stop_msg.model_dump())
-        elif not is_subconscious and within_onset_grace and not speculative_intent_pending:
+        elif (
+            not is_subconscious
+            and within_onset_grace
+            and not speculative_intent_pending
+        ):
             # Reviewer finding: this transcript is exactly the case the onset
             # grace comment above describes as most likely onset noise (a
             # click, pop, or echo tail), not real speech -- STT's own
@@ -698,7 +846,10 @@ class BrainAgent(BaseAgent):
             async with self._turn_state_lock:
                 self.last_assistant_response = None
                 self.last_audio_progress = None
-            generator = self.cognitive_core.process_event(raw_event)
+                self._active_action_intent = None
+            generator = self.cognitive_core.process_event(
+                raw_event, percept=self.last_percept
+            )
 
         # Wrap generator to monitor TTFT and inject fillers
         wrapped_generator = self.conversational_runtime.monitor_stream_and_fill(
@@ -745,6 +896,7 @@ class BrainAgent(BaseAgent):
     async def _on_audio_playback_progress(self, data: dict[str, Any]):
         """Tracks the current word/character progress of the audio playback."""
         try:
+            self.last_percept = percept.from_playback_progress(data)
             progress = AudioPlaybackProgress.model_validate(data)
             async with self._turn_state_lock:
                 active_turn_id = getattr(self, "_active_response_turn_id", None)
@@ -761,6 +913,24 @@ class BrainAgent(BaseAgent):
                     # starting to play, not just being queued -- the moment
                     # _on_chat_input's grace period below measures from.
                     self._last_audio_onset_at = time.time()
+                if progress.completed:
+                    # Phase 1 causal slice (§22, §38): the turn's terminal,
+                    # non-interrupted outcome. `last_assistant_response` is
+                    # the full text this same handler's playback reports
+                    # finished delivering.
+                    delivered = self.last_assistant_response or ""
+                    # FIX-CLD-04: trust the playback-reported offset rather
+                    # than assuming every COMPLETED frame delivered the full
+                    # text -- `min(...)` still clamps to `len(delivered)`
+                    # when the report reaches or exceeds it (the common
+                    # case), rather than indexing past the actual string.
+                    offset = min(progress.character_offset, len(delivered))
+                    await self._emit_outcome_record(
+                        getattr(self, "_active_action_intent", None),
+                        status="COMPLETED",
+                        actual_delivered_text=delivered,
+                        character_offset=offset,
+                    )
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
             )
@@ -792,6 +962,7 @@ class BrainAgent(BaseAgent):
         "generation cancelled", however the confirmation was reached.
         """
         try:
+            self.last_percept = percept.from_audio_stop(data)
             stop_msg = AudioStop.model_validate(data)
 
             # Truncation, and cancelling the turn that was cut off, only
@@ -832,7 +1003,9 @@ class BrainAgent(BaseAgent):
                         INTERRUPTION_ADRENALINE_SPIKE, reason="confirmed interruption"
                     )
                 except Exception as e:
-                    logger.warning("[Endocrine] Interruption adrenaline release failed: %s", e)
+                    logger.warning(
+                        "[Endocrine] Interruption adrenaline release failed: %s", e
+                    )
         except Exception as e:
             logger.error(f"Error handling audio stop truncation: {e}")
 
@@ -1101,6 +1274,24 @@ class BrainAgent(BaseAgent):
                     if incoming_latency_metadata is None:
                         incoming_latency_metadata = {}
                     incoming_latency_metadata["pipeline_telemetry"] = output["data"]
+
+                elif output["type"] == "action_intent":
+                    # Phase 1 causal slice (§22, §38): Stage 6 committed this
+                    # before any of the content above was generated. Bound
+                    # here, before playback/interruption events can race it,
+                    # so _on_audio_playback_progress/_truncate_interrupted_reply/
+                    # _cancel_active_generation always have the right intent
+                    # to attribute their OutcomeRecord to.
+                    try:
+                        intent = ActionIntent.model_validate(output["data"])
+                        async with self._turn_state_lock:
+                            self._active_action_intent = intent
+                    except Exception:
+                        logger.warning(
+                            "[Brain] Malformed action_intent chunk on turn_id=%s",
+                            turn_id,
+                            exc_info=True,
+                        )
 
                 elif output["type"] == "done":
                     if current_chunk_words:

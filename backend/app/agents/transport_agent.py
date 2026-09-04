@@ -57,7 +57,7 @@ class TransportAgent(BaseAgent):
             "ai-voice", self.audio_source
         )
         self.audio_queue: asyncio.Queue[
-            tuple[bytes, int, int, str | None, int | None, int | None]
+            tuple[bytes, int, int, str | None, int | None, int | None, bool]
         ] = asyncio.Queue(
             maxsize=max(32, int(getattr(Config, "TRANSPORT_AUDIO_QUEUE_SIZE", 256)))
         )
@@ -361,6 +361,7 @@ class TransportAgent(BaseAgent):
                         turn_id,
                         character_offset,
                         word_index,
+                        False,
                     )
                     try:
                         self.audio_queue.put_nowait(queued_frame)
@@ -405,6 +406,36 @@ class TransportAgent(BaseAgent):
 
             if is_done:
                 logger.info("AI Utterance stream complete.")
+                # FIX-CLD-02: nothing downstream of this bridge ever
+                # published a terminal `completed=True` progress event on
+                # the normal (non-interrupted) playback path, so BrainAgent
+                # never emitted a COMPLETED OutcomeRecord for a turn that
+                # simply finished speaking (only an audio.stop interruption
+                # produced any terminal record at all). Queued as a marker
+                # frame -- not published here directly -- so it drains
+                # through the same FIFO `audio_queue` behind any real PCM
+                # this same message just enqueued above, and the worker
+                # only reports "completed" once every real frame ahead of
+                # it has actually reached `audio_source.capture_frame`, the
+                # closest observable "reached the speaker" point (see
+                # `_maybe_publish_playback_progress`'s own docstring).
+                completion_marker = (
+                    b"",
+                    sample_rate,
+                    num_channels,
+                    turn_id,
+                    character_offset,
+                    word_index,
+                    True,
+                )
+                try:
+                    self.audio_queue.put_nowait(completion_marker)
+                except asyncio.QueueFull:
+                    logger.warning(
+                        "Transport audio queue full; dropping completion "
+                        "marker for turn %s.",
+                        turn_id,
+                    )
 
         except Exception as e:
             logger.error(f"Error bridging audio: {e}")
@@ -420,8 +451,18 @@ class TransportAgent(BaseAgent):
                     turn_id,
                     character_offset,
                     word_index,
+                    completed,
                 ) = await self.audio_queue.get()
                 try:
+                    if completed:
+                        # FIX-CLD-02: a marker frame carries no audio -- it
+                        # exists only to report, in FIFO order behind every
+                        # real frame this turn queued, that playback for
+                        # this turn has actually finished.
+                        self._maybe_publish_playback_progress(
+                            turn_id, character_offset, word_index, completed=True
+                        )
+                        continue
                     if not pcm_data or num_channels <= 0:
                         continue
 
@@ -479,7 +520,7 @@ class TransportAgent(BaseAgent):
         self.spawn(self.publish(Topics.AUDIO_PLAYBACK_BACKLOG, backlog.model_dump()))
 
     def _maybe_publish_playback_progress(
-        self, turn_id, character_offset, word_index
+        self, turn_id, character_offset, word_index, completed: bool = False
     ) -> None:
         """P4-2: fires once a PCM frame carrying a *new* offset has actually
         reached the LiveKit audio source -- the closest observable "reached
@@ -490,21 +531,33 @@ class TransportAgent(BaseAgent):
         JetStream ack round-trip for an observability-shaped message must not
         delay the next PCM frame -- the same reasoning voice-agent's own
         `publish_pcm` documents for its own ack.
+
+        FIX-CLD-02: `completed=True` (the turn's terminal marker frame) must
+        always publish, even when its offset does not exceed the last one
+        already reported -- the de-dupe gate below exists to collapse
+        several PCM chunks that share one unchanged mid-utterance offset,
+        not to swallow the one event that tells BrainAgent the turn is over.
+        A marker with no offset of its own (a bodiless trailer message, see
+        `_on_nats_audio`) falls back to the last real offset this turn
+        already published, which is exactly the length actually delivered.
         """
         if character_offset is None or word_index is None:
-            return
+            if not completed:
+                return
+            character_offset = max(self._last_progress_offset, 0)
+            word_index = 0
         if turn_id != self._last_progress_turn_id:
             self._last_progress_turn_id = turn_id
             self._last_progress_offset = -1
-        if character_offset <= self._last_progress_offset:
+        if not completed and character_offset <= self._last_progress_offset:
             return
-        self._last_progress_offset = character_offset
+        self._last_progress_offset = max(self._last_progress_offset, character_offset)
 
         progress = AudioPlaybackProgress(
             utterance_id=turn_id or "",
             character_offset=character_offset,
             word_index=word_index,
-            completed=False,
+            completed=completed,
         )
         self.spawn(self.publish(Topics.AUDIO_PLAYBACK_PROGRESS, progress.model_dump()))
 

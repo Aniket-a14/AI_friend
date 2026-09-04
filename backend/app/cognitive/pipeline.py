@@ -2,13 +2,31 @@ import asyncio
 import logging
 import math
 from collections.abc import AsyncGenerator
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import StateUpdate
 from ..persona.policy import PersonaPolicy
 from ..state.session_state import SessionState, persist_session_state
+from .action_intent import ActionIntent, ActionKind, build_action_intent
+from .behavior_contracts import BehaviorDecision
+from .percept import PerceptEnvelope
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class WorkspaceSnapshotLike(Protocol):
+    """Structural stand-in for Codex's `CognitiveWorkspaceSnapshot`
+    (`app/state/workspace.py`, a parallel Phase 1 work package this pipeline
+    must not import directly -- see `CLAUDE_TASK.md`'s file ownership split).
+    Any object exposing `epoch`/`revision` satisfies this, including the real
+    frozen dataclass once integrated, so `execute()` can commit a causally
+    accurate `ActionIntent` today without a hard dependency on a module this
+    branch does not own."""
+
+    epoch: int
+    revision: int
+
 
 # --- Endocrine channels ---------------------------------------------------
 # Until now both hormones had a release API and almost nothing calling it: one
@@ -436,14 +454,75 @@ class CognitivePipeline:
         }
         return (False, signal)
 
+    # Stage 6 action-type -> ActionIntent.kind. "RESPOND_CHAT"/"STORE_MEMORY"
+    # both still end in `action.py` streaming spoken content (see
+    # `_execute_store_memory`'s "Got it, I've committed that to memory."), so
+    # both map to SPEAK; only the reflection path produces no speech at all.
+    _ACTION_KIND_BY_TYPE: dict[str, ActionKind] = {
+        "BACKGROUND_CONSOLIDATION": "REFLECT",
+    }
+
+    def _derive_action_kind(self, plan) -> ActionKind:
+        return self._ACTION_KIND_BY_TYPE.get(plan.action_type, "SPEAK")
+
+    def _commit_action_intent(
+        self,
+        plan,
+        session_state: "SessionState | None",
+        workspace: WorkspaceSnapshotLike | None,
+        percept: PerceptEnvelope | None,
+    ) -> ActionIntent:
+        """Stage 6: the typed commitment made before Stage 8 generates
+        anything (§22, §38) -- always produced, so every turn cites exactly
+        one `(epoch, revision)` tuple (AC-01), not only turns whose BT branch
+        happened to attach a `BehaviorDecision`.
+
+        `isinstance` rather than `is not None`: `ActionPlan.behavior_decision`
+        is untyped `Any` on several existing test doubles (e.g. a bare
+        `MagicMock()` plan), where the attribute auto-vivifies as a truthy
+        mock rather than `None`. Falling back to the synthesized payload for
+        anything that is not a real `BehaviorDecision` keeps this additive
+        rather than newly required of every existing caller.
+        """
+        behavior_decision_payload: dict[str, Any] = (
+            plan.behavior_decision.model_dump()
+            if isinstance(plan.behavior_decision, BehaviorDecision)
+            else {"goal": plan.goal, "action_type": plan.action_type}
+        )
+        behavior_decision_payload["percept_id"] = (
+            percept.percept_id if percept is not None else None
+        )
+        turn_id = (
+            session_state.turn_id
+            if session_state is not None
+            else behavior_decision_payload.get("goal", "unknown-turn")
+        )
+        return build_action_intent(
+            turn_id=turn_id,
+            workspace_epoch=workspace.epoch if workspace is not None else 0,
+            workspace_revision=workspace.revision if workspace is not None else 0,
+            kind=self._derive_action_kind(plan),
+            behavior_decision=behavior_decision_payload,
+        )
+
     async def execute(
         self,
         raw_event: dict[str, Any],
         surfaced_memories: list[dict[str, Any]] | None = None,
+        percept: PerceptEnvelope | None = None,
+        workspace: WorkspaceSnapshotLike | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Executes the master cognitive loop.
         Yields events/chunks for the agent wrapper to handle.
+
+        `percept` is the Phase 1 normalized `PerceptEnvelope` for this turn
+        (§7) and `workspace` is the current `CognitiveWorkspaceSnapshot` (§38,
+        Codex's `app/state/workspace.py`) -- both optional and additive: a
+        caller that predates them (this pipeline's existing production
+        caller, `CognitiveService.process_event`) keeps working unchanged,
+        and Stage 6 still commits an `ActionIntent` against a `(0, 0)`
+        fallback tuple rather than skipping the causal trace entirely.
         """
         import time
 
@@ -558,6 +637,15 @@ class CognitivePipeline:
         ):
             yield chunk
         state_snapshot = tom_result["state_snapshot"]
+
+        # 6b. Explicit ActionIntent commitment (§22, §38) -- before Stage 8
+        # generates anything, so the eventual outcome always has a
+        # committed-at-decision-time record to attribute back to.
+        action_intent = self._commit_action_intent(
+            plan, session_state, workspace, percept
+        )
+        yield {"type": "action_intent", "data": action_intent.model_dump()}
+
         stage_times["stage_6_decision_ms"] = (time.perf_counter() - t_start) * 1000.0
 
         # 7. Action Preparation
