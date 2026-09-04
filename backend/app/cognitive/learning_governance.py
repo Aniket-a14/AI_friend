@@ -199,20 +199,29 @@ def _protected_phrases() -> tuple[tuple[str, ...], ...]:
     return tuple(phrases)
 
 
-# Computed once: IMMUTABLE_CORE and the CONSTITUTIONAL field set are both
-# fixed at import time (schema constants), not runtime state.
 _PROTECTED_PHRASES: tuple[tuple[str, ...], ...] = _protected_phrases()
+_SINGLE_WORD_PROTECTED: frozenset[str] = frozenset(p[0] for p in _PROTECTED_PHRASES if len(p) == 1)
+_MULTI_WORD_PROTECTED: tuple[tuple[str, ...], ...] = tuple(p for p in _PROTECTED_PHRASES if len(p) >= 2)
+_JOINED_PROTECTED: tuple[tuple[str, tuple[str, ...]], ...] = tuple(
+    ("".join(p), p) for p in _PROTECTED_PHRASES if len(p) >= 2
+)
 
 
 def _string_names_protected_region(text: str) -> tuple[str, ...] | None:
     """The matched phrase if `text` names a protected region under any
     delimiter, camelCase, joined, or casing variation; `None` otherwise."""
+    if not text:
+        return None
     tokens = _normalize_domain_tokens(text)
-    for phrase in _PROTECTED_PHRASES:
+    for t in tokens:
+        if t in _SINGLE_WORD_PROTECTED:
+            return (t,)
+    for phrase in _MULTI_WORD_PROTECTED:
         if _tokens_contain_phrase(tokens, phrase):
             return phrase
-    for phrase in _PROTECTED_PHRASES:
-        if _contains_joined_phrase(text, phrase):
+    stripped = _ALNUM_ONLY_PATTERN.sub("", text.lower())
+    for joined_str, phrase in _JOINED_PROTECTED:
+        if joined_str in stripped:
             return phrase
     return None
 

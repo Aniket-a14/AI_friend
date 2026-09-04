@@ -1,0 +1,53 @@
+{
+  "phase": "PHASE_06",
+  "timestamp": 1788536260.638922,
+  "benchmarks": [
+    {
+      "id": "BM-LOC-P6-01",
+      "name": "Deterministic Plan Verifier Latency and Soundness",
+      "iterations": 1000,
+      "mean_latency_us": 3.83,
+      "p50_latency_us": 4.209,
+      "p95_latency_us": 4.417,
+      "p99_latency_us": 4.625,
+      "soundness_rate_pct": 100.0,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P6-02",
+      "name": "Episodic Simulation Sandbox Quarantine and Throughput",
+      "iterations": 1000,
+      "mean_latency_us": 6.728,
+      "p50_latency_us": 6.625,
+      "p95_latency_us": 6.959,
+      "p99_latency_us": 8.708,
+      "quarantine_block_rate_pct": 100.0,
+      "state_leakage": false,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P6-03",
+      "name": "Learning Governance Gate and Rollback Latency",
+      "iterations": 1000,
+      "mean_latency_us": 46.605,
+      "p50_latency_us": 53.25,
+      "p95_latency_us": 59.792,
+      "p99_latency_us": 139.833,
+      "immutable_rejection_rate_pct": 100.0,
+      "rollback_fidelity_pct": 100.0,
+      "verdict": "PASS"
+    },
+    {
+      "id": "BM-LOC-P6-04",
+      "name": "Learning-Progress Curiosity Signal Computation",
+      "iterations": 1000,
+      "mean_latency_us": 3.017,
+      "p50_latency_us": 2.959,
+      "p95_latency_us": 3.084,
+      "p99_latency_us": 3.167,
+      "ranking_accuracy_pct": 100.0,
+      "verdict": "PASS"
+    }
+  ],
+  "overall_verdict": "PASS"
+}
