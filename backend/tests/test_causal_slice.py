@@ -757,7 +757,11 @@ async def test_process_event_forwards_percept_and_workspace_to_pipeline(
     received: dict[str, Any] = {}
 
     async def fake_execute(
-        raw_event, surfaced_memories=None, percept=None, workspace=None
+        raw_event,
+        surfaced_memories=None,
+        percept=None,
+        workspace=None,
+        memory_activations=None,
     ):
         received["percept"] = percept
         received["workspace"] = workspace
@@ -788,7 +792,11 @@ async def test_process_event_defaults_percept_and_workspace_to_none(
     received: dict[str, Any] = {"percept": "not-yet-set", "workspace": "not-yet-set"}
 
     async def fake_execute(
-        raw_event, surfaced_memories=None, percept=None, workspace=None
+        raw_event,
+        surfaced_memories=None,
+        percept=None,
+        workspace=None,
+        memory_activations=None,
     ):
         received["percept"] = percept
         received["workspace"] = workspace

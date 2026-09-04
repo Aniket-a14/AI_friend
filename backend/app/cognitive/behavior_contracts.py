@@ -63,8 +63,20 @@ class CommunicativeIntent(BaseModel):
 class BehaviorDecision(BaseModel):
     """The typed decision stage 6 hands to stage 8's realization: an intent
     plus the claim boundaries `persona/policy.py` enforces before
-    generation."""
+    generation.
+
+    Phase 02 Package B additions: `selected_candidate` and
+    `rejected_alternatives` record the `CandidateSelector` outcome
+    (`action_candidate.py`) when `Config.PHASE_02_MEMORY_TRUTH` is enabled --
+    empty/None otherwise, so `.model_dump()` for a legacy caller is
+    unchanged in every value that existed before this field was added.
+    `retrieval_degraded` mirrors an `outage_flag` seen on any
+    `MemoryActivation` considered for this turn (`memory_activation.py`).
+    """
 
     intent: CommunicativeIntent
     allowed_claims: list[str] = Field(default_factory=list)
     forbidden_claims: list[str] = Field(default_factory=list)
+    selected_candidate: dict[str, Any] | None = None
+    rejected_alternatives: list[dict[str, Any]] = Field(default_factory=list)
+    retrieval_degraded: bool = False

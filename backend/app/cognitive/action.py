@@ -11,6 +11,7 @@ from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
 from .identity import _HOSTILE_TO_USER, _match_views
 from .json_extract import extract_first_json_value
+from .memory_activation import AntiInjectionGate
 
 logger = logging.getLogger(__name__)
 
@@ -291,6 +292,27 @@ _CHAT_GUIDELINE = (
 
 # Spoken when self-correction cannot produce a compliant reply.
 _SAFE_FALLBACK_LINE = "I need a moment to gather my thoughts..."
+
+# Fix round (Codex review B2): system-prompt guideline for the CLARIFY
+# action, kept separate from _CHAT_GUIDELINE -- an ASK-selected turn must
+# not answer or assert anything, only ask, and a shared guideline written
+# for ordinary chat has no line saying that.
+_CLARIFY_GUIDELINE = (
+    "Guideline:\n"
+    "- You have conflicting or uncertain information and have chosen to ask "
+    "for clarification instead of answering.\n"
+    "- Ask exactly ONE short, direct clarifying question about the "
+    "specified subject. Do not answer the user's original question yet, "
+    "and do not assert either version of the disputed information as "
+    "fact.\n"
+    "- Keep it brief and natural, the way a person double-checks something "
+    "before continuing, not a form field.\n"
+    "- Maintain your identity rules at all times."
+)
+
+# Fix round (Codex review B4): stateless, shared across every call --
+# AntiInjectionGate holds no per-turn state.
+_ANTI_INJECTION_GATE = AntiInjectionGate()
 
 # P1-9: marks retrieved/perceived content (memory, visual context) as data
 # for the model to consider, distinct from the persona's own *output*-side
@@ -668,6 +690,21 @@ class ActionService:
         own = [m for m in surfaced if (m.get("source") or "") == BIOGRAPHY_SOURCE]
         shared = [m for m in surfaced if (m.get("source") or "") != BIOGRAPHY_SOURCE]
 
+        def _rendered_content(memory: dict) -> str:
+            """Fix round (Codex review B4): every piece of surfaced-memory
+            text renders through the injection gate before it reaches the
+            prompt, when Config.PHASE_02_MEMORY_TRUTH is on -- previously
+            AntiInjectionGate.sanitize_memory_text existed with no caller
+            anywhere in the codebase, so it had no effect on the live
+            attack surface regardless of the flag. Gated the same way as
+            every other Phase 02 behavior change: off preserves exact
+            Phase 1 rendering.
+            """
+            content = memory.get("content", "")
+            if Config.PHASE_02_MEMORY_TRUTH:
+                content = _ANTI_INJECTION_GATE.sanitize_memory_text(content)
+            return content
+
         blocks = []
         if own:
             # The exhaustiveness clause is not decoration. Labelling the block
@@ -683,7 +720,7 @@ class ActionService:
                 "your own life. Anything not stated below, you do not know -- "
                 "say so plainly rather than describing it:\n"
                 + "\n".join(
-                    f"- {_wrap_retrieved(m['content'])}"
+                    f"- {_wrap_retrieved(_rendered_content(m))}"
                     for m in reorder_for_long_context(own)
                 )
             )
@@ -691,7 +728,7 @@ class ActionService:
             blocks.append(
                 "\nSHARED HISTORY / RECENT CONTEXT (Active Influence):\n"
                 + "\n".join(
-                    f"- {_wrap_retrieved(m['content'])}"
+                    f"- {_wrap_retrieved(_rendered_content(m))}"
                     for m in reorder_for_long_context(shared)
                 )
             )
@@ -1422,6 +1459,79 @@ class ActionService:
         yield {"type": "content", "data": plan.payload.get("message", "")}
         yield {"type": "done", "data": "finished"}
 
+    @staticmethod
+    def _clarify_fallback_line(clarification_subject: str) -> str:
+        return (
+            "Before I answer, I want to make sure I have this right -- "
+            f"can you clarify {clarification_subject} for me?"
+        )
+
+    async def _execute_clarify(self, plan: ActionPlan):
+        """Fix round (Codex review B2 - blocker): realize an ASK-selected
+        candidate as an actual clarification question, rather than letting
+        Stage 8 fall through to ordinary chat generation for a plan
+        decision.py committed as `action_type="CLARIFY"`. Section 22
+        requires the executed action to match the selected one -- a trace
+        that says ASK while the model just answers normally is causally
+        misleading for outcome evaluation.
+
+        Deliberately smaller than `_execute_respond_chat`: this path does
+        not stream token-by-token, run the metacognitive self-correction
+        pass, or apply endocrine sampling -- a clarification question is a
+        short, low-risk utterance, and keeping this self-contained makes
+        the "always end in a real question" guarantee easy to see in one
+        place. Prefers an LLM-generated question grounded in the
+        clarification subject decision.py selected; falls back to a fixed,
+        deterministic question whenever there is no LLM configured,
+        generation raises, or generation returns nothing usable, so ASK
+        never silently degrades into silence or generic chat.
+        """
+        clarification_subject = plan.payload.get("clarification_subject") or "that"
+        fallback = self._clarify_fallback_line(clarification_subject)
+
+        if not self.llm:
+            yield {"type": "content", "data": fallback}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
+        msg = plan.payload.get("message", "")
+        system_instruction = f"{identity_prompt}\n\n{_CLARIFY_GUIDELINE}"
+        user_prompt = (
+            f'The user said: "{msg}"\n'
+            "You have conflicting or uncertain information about: "
+            f"{clarification_subject}.\n"
+            "Ask exactly one short, direct clarifying question about this "
+            "before saying anything else. Do not answer the question yet."
+        )
+
+        try:
+            text = ""
+            async for chunk in self.llm.generate_stream(
+                prompt=user_prompt,
+                system=system_instruction,
+                model=plan.payload.get("model"),
+            ):
+                text += chunk
+            # A model that ignored the "ask, don't answer" instruction and
+            # emitted chain-of-thought first is still better cut here than
+            # spoken -- strip <thought>/<think> blocks the same way the
+            # decision layer's own JSON extraction already tolerates them.
+            text = re.sub(
+                r"<thought>.*?</thought>|<think>.*?</think>",
+                "",
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            ).strip()
+        except Exception as e:
+            logger.warning(f"[Action] Clarification generation failed: {e}")
+            yield {"type": "content", "data": fallback}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        yield {"type": "content", "data": text or fallback}
+        yield {"type": "done", "data": "finished"}
+
     async def _execute_store_memory(self, plan: ActionPlan):
         """Commit an explicitly requested memory."""
         content = plan.payload.get("content", "")
@@ -1469,6 +1579,10 @@ class ActionService:
 
         elif plan.action_type == "RESPOND_DETERMINISTIC":
             async for out in self._execute_respond_deterministic(plan):
+                yield out
+
+        elif plan.action_type == "CLARIFY":
+            async for out in self._execute_clarify(plan):
                 yield out
 
         elif plan.action_type == "STORE_MEMORY":
