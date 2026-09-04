@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 from typing import Any
 
@@ -33,6 +34,8 @@ class PersonModel(BaseModel):
         self, outcome_success: bool, stake_weight: float = 0.5
     ) -> None:
         """Update separate trust dimensions from an observed reliance outcome."""
+        if not math.isfinite(stake_weight):
+            return
         if outcome_success:
             competence_delta = 0.05 * stake_weight
             benevolence_delta = 0.02 * stake_weight
@@ -51,6 +54,11 @@ class PersonModel(BaseModel):
         self, kind: str, magnitude: float, notes: str = ""
     ) -> None:
         """Record an asymmetric rupture or repair in the relationship history."""
+        kind = kind.lower().strip()
+        if kind not in ("rupture", "repair"):
+            raise ValueError(f"Invalid rupture/repair kind: {kind}")
+        if not math.isfinite(magnitude):
+            return
         if kind == "rupture":
             self.trust_benevolence = max(
                 0.0, self.trust_benevolence - magnitude * 1.5
@@ -76,8 +84,10 @@ class PersonModel(BaseModel):
         is_private: bool = True,
     ) -> bool:
         """Return whether a fact can be disclosed without crossing ownership."""
-        if not is_private or fact_owner_id is None:
+        if not is_private:
             return True
+        if fact_owner_id is None:
+            return False
         return fact_owner_id == target_person_id
 
     def record_disclosure(self, fact_id: str, context: str = "") -> None:

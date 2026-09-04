@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import redis
 
-from ..cognitive.calibration import CapabilityLimitationModel
 from ..config import Config
 from ..errors import StateConflictError
 from ..persona import PersonaProfile
@@ -33,6 +32,7 @@ from .person_model import PersonModel
 
 if TYPE_CHECKING:
     from ..cognitive.appraisal import AppraisalRecord
+    from ..cognitive.calibration import CapabilityLimitationModel
     from ..cognitive.global_controls import GlobalControls
     from ..cognitive.tom import UserMentalModel
 
@@ -41,6 +41,13 @@ def _default_user_mental_model():
     from ..cognitive.tom import UserMentalModel
 
     return UserMentalModel()
+
+
+def _new_capability_model() -> "CapabilityLimitationModel":
+    """Construct calibration lazily to keep state imports acyclic."""
+    from ..cognitive.calibration import CapabilityLimitationModel
+
+    return CapabilityLimitationModel()
 
 
 logger = logging.getLogger(__name__)
@@ -147,8 +154,8 @@ class AgentState:
     # fields remain last to preserve AgentState's legacy positional arguments.
     persons: dict[str, PersonModel] = field(default_factory=dict)
     active_person_id: str = "default_user"
-    capability_model: CapabilityLimitationModel = field(
-        default_factory=CapabilityLimitationModel
+    capability_model: "CapabilityLimitationModel" = field(
+        default_factory=_new_capability_model
     )
 
     # --- Affect Split Properties ---
@@ -571,8 +578,8 @@ class StateService:
         )
         self._last_sensory_persist = 0.0
 
-    def get_active_person_model(self) -> PersonModel:
-        """Return the active person's model, creating its compatibility seed."""
+    def _get_active_person_model_locked(self) -> PersonModel:
+        """Return and synchronize the active person's model while locked."""
         active_person_id = self.current_state.active_person_id
         person = self.current_state.persons.get(active_person_id)
         if person is None:
@@ -582,6 +589,7 @@ class StateService:
                 trust_competence=self.current_state.trust_competence,
             )
             self.current_state.persons[active_person_id] = person
+        self._sync_active_person_trust_locked(person)
         return person
 
     def _sync_active_person_trust_locked(self, person: PersonModel) -> None:
@@ -594,12 +602,25 @@ class StateService:
         self.current_state.trust_competence = person.trust_competence
         self.current_state.trust_benevolence = person.trust_benevolence
 
+    async def set_active_person(self, person_id: str) -> PersonModel:
+        """Select a person and synchronize their trust into legacy scalars."""
+        async with self._state_lock:
+            self.current_state.active_person_id = person_id
+            person = self._get_active_person_model_locked()
+            self._sync_active_person_trust_locked(person)
+            return person
+
+    async def get_active_person_model(self) -> PersonModel:
+        """Return the active person's model under the state lock."""
+        async with self._state_lock:
+            return self._get_active_person_model_locked()
+
     async def update_active_person_reliance(
         self, outcome_success: bool, stake_weight: float = 0.5
     ) -> None:
         """Apply a reliance outcome to the active person under the state lock."""
         async with self._state_lock:
-            person = self.get_active_person_model()
+            person = self._get_active_person_model_locked()
             person.update_trust_from_reliance(outcome_success, stake_weight)
             self._sync_active_person_trust_locked(person)
 
@@ -608,7 +629,7 @@ class StateService:
     ) -> None:
         """Record an active-person rupture or repair under the state lock."""
         async with self._state_lock:
-            person = self.get_active_person_model()
+            person = self._get_active_person_model_locked()
             person.record_rupture_repair(kind, magnitude, notes)
             self._sync_active_person_trust_locked(person)
 

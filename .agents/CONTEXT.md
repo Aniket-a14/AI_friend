@@ -16337,3 +16337,37 @@ Verification:
 **NOT done:** Persistent person-model storage, broader outcome-event wiring,
 action runtime integration, GPU validation, remote CI, merge, and push remain
 outside this Package A scope.
+
+### 2026-09-04 -- Codex Phase 04 Package A peer-review fix round
+
+Changed files:
+
+- `backend/app/state/agent_state.py`
+- `backend/app/state/person_model.py`
+- `backend/app/cognitive/calibration.py`
+- `backend/tests/test_social_metacognition.py`
+- `orchestration/PHASE_04/CODEX_RESULT.md`
+
+Behavior changes:
+
+- AgentState now lazily creates CapabilityLimitationModel so isolated state
+  imports cannot traverse the cognitive calibration dependency during module
+  initialization.
+- StateService now selects and retrieves active person models under
+  `_state_lock`; person switching and direct active-person retrieval keep the
+  legacy scalar trust mirrors synchronized.
+- Blank capability limitations no longer match every query. Person trust
+  updates ignore non-finite numeric input, normalize and validate
+  rupture/repair kinds, and fail closed for private facts without an owner.
+
+Verification:
+
+- Focused state suite: 20/20 passed.
+- Focused social-metacognition suite: 22/22 passed.
+- Ruff and Radon complexity checks passed. ASCII scan and `git diff --check`
+  passed for Phase 04 source and result files.
+- Mutation check: removing the reliance finite-input guard caused its three
+  NaN/Inf regression cases to fail; the guard was restored.
+
+**NOT done:** Remote CI, GPU validation, persistent person-model storage, and
+runtime action integration remain outside this scoped peer-review fix round.

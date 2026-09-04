@@ -48,10 +48,12 @@ class CapabilityLimitationModel(BaseModel):
     def is_known_limitation(self, query: str) -> bool:
         """Return whether a query contains a declared limitation phrase."""
         normalized_query = query.lower()
-        return any(
-            limitation.lower() in normalized_query
-            for limitation in self.known_limitations
-        )
+        for limitation in self.known_limitations:
+            if not limitation.strip():
+                continue
+            if limitation.lower() in normalized_query:
+                return True
+        return False
 
     def evaluate_directive(
         self, domain: str, raw_confidence: float, query: str = ""
