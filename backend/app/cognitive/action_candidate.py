@@ -3,16 +3,20 @@ scored action candidates with constraint-first boundary filtering, applied
 before any candidate reaches language realization (FINAL_HUMANOID_BRAIN_
 ARCHITECTURE.md Sections 8, 11, 22, 39).
 
-Constraint-first means filter_constraints always runs before score_and_select
-sees a candidate: a candidate that violates an identity boundary or safety
-refusal must never win on score alone, however useful it would otherwise
-score. Package A (backend/app/state/memory_records.py, temporal_store.py) is
-a separate, parallel work package this module does not import from -- see
+Constraint-first means filter_constraints always runs before scoring: a
+candidate that violates an identity boundary or safety refusal must never
+win on score alone, however useful it would otherwise score. Fix round
+(Codex review B1 - blocker): score_and_select itself now enforces this
+when called with `forbidden_claims`, rather than relying solely on every
+caller to have pre-filtered -- see that method's docstring. Package A
+(backend/app/state/memory_records.py, temporal_store.py) is a separate,
+parallel work package this module does not import from -- see
 orchestration/PHASE_02/CLAUDE_TASK.md's file ownership split.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import uuid
 from typing import Any, Literal
@@ -20,7 +24,24 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 ActionCandidateKind = Literal[
-    "SPEAK", "ASK", "WAIT", "OBSERVE", "RETRIEVE", "VERIFY", "REFLECT", "UPDATE_GOAL"
+    "SPEAK",
+    "ASK",
+    "WAIT",
+    "OBSERVE",
+    "RETRIEVE",
+    "VERIFY",
+    "REFLECT",
+    "UPDATE_GOAL",
+    # Phase 03 Package B: emotion regulation actions (Architecture Sections
+    # 9, 10, 21, 38) -- selectable candidates rather than silent affect
+    # overwriting. REAPPRAISE and REDIRECT_ATTENTION have generators in
+    # decision.py and executors in action.py; SUPPRESS_EXPRESSION is added
+    # to the type now, with no generator or executor wired to it yet, same
+    # reasoning as action_intent.py's UPDATE_STATE/EXTERNAL_ACT/CONTINUE --
+    # a schema ceiling, not a claim that every kind is reachable today.
+    "REAPPRAISE",
+    "REDIRECT_ATTENTION",
+    "SUPPRESS_EXPRESSION",
 ]
 
 # Weight applied to goal alignment (the fraction of a candidate's
@@ -28,6 +49,106 @@ ActionCandidateKind = Literal[
 # score. Kept well below 1.0 so alignment nudges the ranking rather than
 # overriding a candidate's own evaluated score.
 _GOAL_ALIGNMENT_WEIGHT = 0.2
+
+# Phase 03 Package B: global-control scoring modulation (Architecture
+# Sections 9, 10, 21). Each is an additive nudge layered on top of a
+# candidate's own score and goal alignment -- never a replacement for
+# either -- and is only ever applied to candidates that have already
+# survived filter_constraints, either because the caller pre-filtered or
+# because score_and_select ran it internally via `forbidden_claims` (fix
+# round, Codex review B1). A candidate that violates an identity boundary
+# can never be modulated back into contention by any combination of
+# global controls.
+_URGENCY_GAIN_THRESHOLD = 0.5
+_EXPLORATION_BUDGET_THRESHOLD = 0.5
+_EFFORT_BUDGET_LOW_THRESHOLD = 0.3
+
+# High urgency rewards low risk and low cost -- a proxy for "fast response
+# time", since ActionCandidate carries no explicit latency field and cost
+# already represents how much a candidate asks of the turn.
+_URGENCY_RISK_WEIGHT = 0.3
+_URGENCY_COST_WEIGHT = 0.2
+
+# A wide exploration budget rewards uncertainty as a proxy for novelty and
+# candidate breadth: a candidate the agent is less certain about is, by
+# construction, further from the safe well-trodden default -- exactly what
+# a wide exploration budget should nudge the ranking toward.
+_EXPLORATION_UNCERTAINTY_WEIGHT = 0.25
+
+# A tight effort budget penalizes cost (a heavy, multi-step candidate); the
+# penalty grows as the budget shrinks toward 0, via (1 - effort_budget).
+_EFFORT_COST_PENALTY_WEIGHT = 0.3
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _control_value(controls: Any, key: str, default: float) -> float:
+    """Duck-typed read of one global-control signal, validated and bounded.
+
+    Accepts either a mapping (a plain dict, or Package A's GlobalControls
+    pydantic model dumped to one) or an attribute-bearing object (the
+    GlobalControls model itself) -- this module intentionally never imports
+    Package A's global_controls.py (see this file's module docstring on the
+    parallel work package split), so it cannot assume a concrete type.
+
+    Package A's own GlobalControls model enforces [0.0, 1.0] and rejects
+    non-finite values at construction, but a duck-typed dict (the other
+    half of this function's contract) carries no such guarantee -- a caller
+    outside that model could pass `{"urgency_gain": 1000}` or
+    `{"urgency_gain": float("nan")}` directly. Fix round (Codex review
+    M7): a non-finite value (NaN, +inf, -inf) is treated as absent and
+    falls back to `default`, exactly like a missing or non-numeric value
+    always has; a finite value is clamped to the unit interval so an
+    out-of-range dict input cannot apply unbounded score modulation.
+    """
+    if controls is None:
+        return default
+    if isinstance(controls, dict):
+        value = controls.get(key, default)
+    else:
+        value = getattr(controls, key, default)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(value):
+        return default
+    return _clamp01(value)
+
+
+def _control_modulation(candidate: ActionCandidate, global_controls: Any) -> float:
+    """Score adjustment from global controls (Architecture Sections 9, 10).
+
+    Returns 0.0 when no controls are supplied, so a caller that never passes
+    global_controls sees byte-identical scoring to before this modulation
+    existed. This function is never consulted by filter_constraints, and
+    score_and_select's caller must always run that first -- see this
+    module's constraint-first invariant.
+    """
+    if global_controls is None:
+        return 0.0
+
+    urgency_gain = _control_value(global_controls, "urgency_gain", 0.0)
+    exploration_budget = _control_value(global_controls, "exploration_budget", 0.5)
+    effort_budget = _control_value(global_controls, "effort_budget", 0.5)
+
+    risk = _clamp01(candidate.risk)
+    cost = _clamp01(candidate.cost)
+    uncertainty = _clamp01(candidate.uncertainty)
+
+    modulation = 0.0
+    if urgency_gain > _URGENCY_GAIN_THRESHOLD:
+        modulation += urgency_gain * _URGENCY_RISK_WEIGHT * (1.0 - risk)
+        modulation -= urgency_gain * _URGENCY_COST_WEIGHT * cost
+    if exploration_budget > _EXPLORATION_BUDGET_THRESHOLD:
+        modulation += (
+            exploration_budget * _EXPLORATION_UNCERTAINTY_WEIGHT * uncertainty
+        )
+    if effort_budget < _EFFORT_BUDGET_LOW_THRESHOLD:
+        modulation -= (1.0 - effort_budget) * _EFFORT_COST_PENALTY_WEIGHT * cost
+    return modulation
 
 
 class ActionCandidate(BaseModel):
@@ -172,9 +293,14 @@ class CandidateSelector:
         return len(overlap) / len(candidate.target_goal_ids)
 
     def score_and_select(
-        self, candidates: list[ActionCandidate], active_goals: list[str]
+        self,
+        candidates: list[ActionCandidate],
+        active_goals: list[str],
+        global_controls: Any | None = None,
+        forbidden_claims: list[str] | None = None,
     ) -> tuple[ActionCandidate, list[dict[str, Any]]]:
-        """Ranks surviving candidates by score plus goal alignment.
+        """Ranks surviving candidates by score plus goal alignment plus
+        global-control modulation.
 
         Raises ValueError on an empty candidate list -- this method never
         invents a winner. A caller with zero surviving candidates (e.g.
@@ -182,20 +308,74 @@ class CandidateSelector:
         candidate (such as WAIT, with no constraint_claims) before reaching
         this point.
 
+        `global_controls` (Phase 03 Package B, optional and additive) is a
+        GlobalControls-shaped object or dict with urgency_gain,
+        exploration_budget and effort_budget signals -- see
+        `_control_modulation` for exactly how each nudges the ranking.
+        Passing `None` (the default) reproduces the pre-Phase-03 scoring
+        exactly.
+
+        CONSTRAINT-FIRST INVARIANT (fix round, Codex review B1 - blocker):
+        when `forbidden_claims` is supplied, this method runs
+        `filter_constraints` on `candidates` itself, before any scoring or
+        modulation -- a candidate whose `constraint_claims` overlap
+        `forbidden_claims` is removed here regardless of score,
+        `global_controls`, or how the caller obtained `candidates`. This is
+        no longer only a convention every caller must separately honor
+        (`DecisionService._select_action_candidate` already did, but a
+        different or future caller of this public method would not have):
+        the selector now owns the ordering itself. Omitting
+        `forbidden_claims` (the default) preserves the exact prior
+        contract, where the caller is solely responsible for having
+        already filtered -- existing callers that pre-filter and pass
+        `forbidden_claims` too see no behavior change, since re-filtering
+        an already-filtered list is a no-op. If every candidate is removed
+        by this internal filter, this method raises ValueError exactly as
+        it does for an empty `candidates` list: it never invents a winner,
+        and the caller must always include a constraint-safe candidate
+        (e.g. WAIT, with no constraint_claims) among `candidates`.
+
         Returns (winner, rejected) where rejected carries a reason dict per
-        runner-up, ordered from strongest to weakest alternative.
+        runner-up (constraint violations first, then lower-ranked scores),
+        ordered from strongest to weakest alternative within each group.
         """
         if not candidates:
             raise ValueError("score_and_select requires at least one candidate")
 
+        constraint_rejected: list[dict[str, Any]] = []
+        survivors = candidates
+        if forbidden_claims:
+            survivors = self.filter_constraints(candidates, forbidden_claims)
+            survivor_ids = {candidate.candidate_id for candidate in survivors}
+            constraint_rejected = [
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "kind": candidate.kind,
+                    "source": candidate.source,
+                    "reason": "constraint_violation",
+                    "constraint_claims": candidate.constraint_claims,
+                }
+                for candidate in candidates
+                if candidate.candidate_id not in survivor_ids
+            ]
+            if not survivors:
+                raise ValueError(
+                    "score_and_select: forbidden_claims rejected every "
+                    "candidate and no constraint-safe fallback candidate "
+                    "(e.g. WAIT, with no constraint_claims) was supplied"
+                )
+
         def combined_score(candidate: ActionCandidate) -> float:
-            return candidate.score + _GOAL_ALIGNMENT_WEIGHT * self._goal_alignment(
-                candidate, active_goals
+            return (
+                candidate.score
+                + _GOAL_ALIGNMENT_WEIGHT
+                * self._goal_alignment(candidate, active_goals)
+                + _control_modulation(candidate, global_controls)
             )
 
-        ranked = sorted(candidates, key=combined_score, reverse=True)
+        ranked = sorted(survivors, key=combined_score, reverse=True)
         winner = ranked[0]
-        rejected = [
+        score_rejected = [
             {
                 "candidate_id": candidate.candidate_id,
                 "kind": candidate.kind,
@@ -205,4 +385,4 @@ class CandidateSelector:
             }
             for candidate in ranked[1:]
         ]
-        return winner, rejected
+        return winner, constraint_rejected + score_rejected
