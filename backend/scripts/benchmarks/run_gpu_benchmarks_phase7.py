@@ -223,6 +223,7 @@ async def run_bm_gpu_p7_01(
     Config.LLM_FAST_MODEL = model_tag
     Config.REFLECTION_ENABLED = False
     Config.SYSTEM2_APPRAISAL_ENABLED = False
+    Config.LLM_NUM_CTX = 2048
 
     client = OllamaClient(base_url=base_url, model=model_tag)
     _reset_model_state(base_url=base_url, model=model_tag)

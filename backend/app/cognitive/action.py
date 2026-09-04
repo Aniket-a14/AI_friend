@@ -884,6 +884,9 @@ class ActionService:
         plans, and any other plan built outside decision.py's BT, don't set
         one)."""
         lines = [f"- Goal: {plan.goal}", f"- Current Emotion: {emotion}"]
+        directive = plan.payload.get("state_directive")
+        if directive:
+            lines.append(f"- State Directive: {directive}")
         decision = plan.behavior_decision
         if decision is not None:
             intent = decision.intent

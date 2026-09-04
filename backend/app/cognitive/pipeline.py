@@ -415,9 +415,8 @@ class CognitivePipeline:
         endocrine-to-sampling mapping and prompt assembly need. Pure -- no
         yields, so it's a plain call from `execute` rather than a
         sub-generator."""
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
-            state_directive
-        )
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt()
+        plan.payload["state_directive"] = state_directive
         plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
         plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
