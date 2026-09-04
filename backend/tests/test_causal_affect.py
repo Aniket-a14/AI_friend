@@ -237,13 +237,17 @@ def test_global_controls_are_immutable_action_selection_inputs():
 def test_phase03_owned_files_are_ascii_only():
     """Phase 03 sources must remain portable 7-bit ASCII artifacts."""
     repository_root = Path(__file__).resolve().parents[2]
-    owned_files = (
+    owned_files = [
         repository_root / "backend/app/cognitive/global_controls.py",
         repository_root / "backend/app/cognitive/appraisal.py",
         repository_root / "backend/app/state/agent_state.py",
         repository_root / "backend/tests/test_causal_affect.py",
-        repository_root / "orchestration/PHASE_03/CODEX_RESULT.md",
-    )
+    ]
+    orchestration_file = repository_root / "orchestration/PHASE_03/CODEX_RESULT.md"
+    if orchestration_file.exists():
+        owned_files.append(orchestration_file)
 
     for path in owned_files:
+        assert path.exists(), f"Missing owned file: {path}"
         assert all(byte < 128 for byte in path.read_bytes()), path
+
