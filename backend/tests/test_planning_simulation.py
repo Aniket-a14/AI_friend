@@ -16,6 +16,7 @@ from app.cognitive.planning import (
     PlanPrecondition,
     PlanStep,
     PreconditionOp,
+    _effect_can_establish,
 )
 from app.cognitive.simulation import (
     EpisodicSimulator,
@@ -46,6 +47,23 @@ def test_plan_artifact_rejects_duplicate_steps_and_unknown_fallbacks():
                     name="one",
                     action_type="ACT",
                     fallback_step_id="absent",
+                )
+            ],
+        )
+
+
+def test_plan_artifact_rejects_a_self_referential_fallback():
+    """A self fallback would make failed action execution loop forever."""
+    with pytest.raises(ValidationError, match="itself"):
+        PlanArtifact(
+            plan_id="self-fallback",
+            goal_id="goal",
+            steps=[
+                PlanStep(
+                    step_id="only",
+                    name="only",
+                    action_type="ACT",
+                    fallback_step_id="only",
                 )
             ],
         )
@@ -110,6 +128,51 @@ def test_verifier_accepts_a_dependency_already_satisfied_by_initial_state():
     assert result.cycle_detected is False
 
 
+def test_verifier_ignores_later_redundant_effects_for_causal_dependencies():
+    """A later re-affirmation must not make an ordered plan appear cyclic."""
+    plan = PlanArtifact(
+        plan_id="ordered-producers",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="prepare",
+                name="prepare",
+                action_type="ACT",
+                effects=[_set_effect("ready", True)],
+            ),
+            PlanStep(
+                step_id="use",
+                name="use",
+                action_type="ACT",
+                preconditions=[_condition("ready", True)],
+                effects=[_set_effect("used", True)],
+            ),
+            PlanStep(
+                step_id="reaffirm",
+                name="reaffirm",
+                action_type="ACT",
+                preconditions=[_condition("used", True)],
+                effects=[_set_effect("ready", True)],
+            ),
+        ],
+    )
+
+    result = DeterministicPlanVerifier().verify(plan)
+
+    assert result.valid is True
+    assert result.cycle_detected is False
+
+
+def test_delete_effect_cannot_establish_not_equal_when_key_is_missing():
+    """NOT_EQUAL requires a present distinct value, so DELETE cannot establish it."""
+    condition = PlanPrecondition(
+        key="status", op=PreconditionOp.NOT_EQUAL, value="blocked"
+    )
+    effect = PlanEffect(key="status", op=PlanEffectOp.DELETE, value=None)
+
+    assert _effect_can_establish(effect, condition) is False
+
+
 def test_verifier_rejects_unfulfilled_precondition_and_invariant_violation():
     """A reachable transition may not silently cross a declared safety invariant."""
     plan = PlanArtifact(
@@ -160,6 +223,24 @@ def test_verifier_rejects_declared_or_actual_step_budget_overrun():
     assert "budget_max_steps exceeds 20" in result.errors
 
 
+def test_verifier_rejects_more_steps_than_the_declared_budget():
+    """The declared step budget must constrain the actual number of plan steps."""
+    plan = PlanArtifact(
+        plan_id="declared-budget",
+        goal_id="goal",
+        budget_max_steps=1,
+        steps=[
+            PlanStep(step_id="first", name="first", action_type="ACT"),
+            PlanStep(step_id="second", name="second", action_type="ACT"),
+        ],
+    )
+
+    result = DeterministicPlanVerifier().verify(plan)
+
+    assert result.valid is False
+    assert "plan step count exceeds budget_max_steps" in result.errors
+
+
 def test_executor_tracks_failed_step_and_runs_declared_fallback():
     """A failed primary action must take its explicit fallback and preserve a trace."""
     plan = PlanArtifact(
@@ -184,7 +265,7 @@ def test_executor_tracks_failed_step_and_runs_declared_fallback():
     result = DeterministicPlanExecutor().execute(
         plan,
         {},
-        action=lambda step, _state: step.step_id != "primary",
+        action=lambda step, _state, _context: step.step_id != "primary",
     )
 
     assert result.succeeded is True
@@ -194,6 +275,116 @@ def test_executor_tracks_failed_step_and_runs_declared_fallback():
         ("fallback", "SUCCEEDED"),
     ]
     assert result.fallback_transitions == [("primary", "fallback")]
+
+
+def test_executor_retries_then_succeeds_with_the_actual_attempt_count():
+    """A transient action failure must retry before applying the step effects."""
+    plan = PlanArtifact(
+        plan_id="retry-success",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="retry",
+                name="retry",
+                action_type="ACT",
+                max_retries=2,
+                effects=[_set_effect("finished", True)],
+            )
+        ],
+    )
+    attempts: list[int] = []
+
+    def transient_action(_step, _state, _context):
+        attempts.append(1)
+        return len(attempts) == 2
+
+    result = DeterministicPlanExecutor().execute(plan, {}, transient_action)
+
+    assert result.succeeded is True
+    assert attempts == [1, 1]
+    assert result.step_executions[0].attempt_count == 2
+    assert result.workspace_state == {"finished": True}
+
+
+def test_executor_reports_retry_exhaustion_as_a_plan_failure():
+    """A step that exhausts every retry cannot silently leave the plan successful."""
+    plan = PlanArtifact(
+        plan_id="retry-failure",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="retry",
+                name="retry",
+                action_type="ACT",
+                max_retries=1,
+            )
+        ],
+    )
+
+    result = DeterministicPlanExecutor().execute(
+        plan, {}, lambda _step, _state, _context: False
+    )
+
+    assert result.succeeded is False
+    assert result.step_executions[0].attempt_count == 2
+    assert result.errors == ["step action reported failure"]
+
+
+def test_executor_applies_increment_append_and_delete_effects():
+    """Every supported non-SET effect must mutate only the detached workspace."""
+    plan = PlanArtifact(
+        plan_id="operators",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="transform",
+                name="transform",
+                action_type="ACT",
+                effects=[
+                    PlanEffect(key="count", op=PlanEffectOp.INCREMENT, value=2),
+                    PlanEffect(key="items", op=PlanEffectOp.APPEND, value="new"),
+                    PlanEffect(key="remove", op=PlanEffectOp.DELETE, value=None),
+                ],
+            )
+        ],
+    )
+
+    result = DeterministicPlanExecutor().execute(
+        plan, {"count": 3, "items": ["old"], "remove": True}
+    )
+
+    assert result.succeeded is True
+    assert result.workspace_state == {"count": 5, "items": ["old", "new"]}
+
+
+def test_executor_reports_fallback_cycles_as_failures():
+    """Indirect fallback cycles must fail closed even after nodes enter completed."""
+    plan = PlanArtifact(
+        plan_id="fallback-cycle",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="first",
+                name="first",
+                action_type="ACT",
+                fallback_step_id="second",
+            ),
+            PlanStep(
+                step_id="second",
+                name="second",
+                action_type="ACT",
+                fallback_step_id="first",
+            ),
+        ],
+    )
+
+    result = DeterministicPlanExecutor().execute(
+        plan, {}, lambda _step, _state, _context: False
+    )
+
+    assert result.succeeded is False
+    assert result.errors == ["execution fallback cycle at step first"]
+    assert result.fallback_transitions == [("first", "second"), ("second", "first")]
 
 
 def test_simulator_rollout_tags_every_record_and_does_not_mutate_workspace():
@@ -239,7 +430,64 @@ def test_simulator_executes_a_plan_on_a_cloned_workspace():
 
     assert original == {"phase": "live"}
     assert result.workspace_state == {"phase": "prospective"}
+    assert result.succeeded is True
     assert result.actions[0]["is_simulation"] is True
+    assert result.outcomes[0]["is_simulation"] is True
+
+
+def test_simulator_marks_action_context_and_execution_failure_as_simulated():
+    """Simulation callbacks see quarantine context and failed plans report failure."""
+    plan = PlanArtifact(
+        plan_id="simulated-failure",
+        goal_id="goal",
+        steps=[PlanStep(step_id="act", name="act", action_type="ACT")],
+    )
+    contexts: list[bool] = []
+
+    def failing_action(_step, _state, context):
+        contexts.append(context.is_simulation)
+        return False
+
+    result = EpisodicSimulator().simulate_plan(plan, {}, failing_action)
+
+    assert contexts == [True, True]
+    assert result.succeeded is False
+    assert result.errors == ["step action reported failure"]
+    assert result.actions[0]["is_simulation"] is True
+    assert result.outcomes[0]["is_simulation"] is True
+
+
+def test_simulator_rejects_invalid_plans_without_executing_actions():
+    """Invalid plans must fail closed before a simulation callback can run."""
+    plan = PlanArtifact(
+        plan_id="invalid-simulation",
+        goal_id="goal",
+        steps=[
+            PlanStep(
+                step_id="first",
+                name="first",
+                action_type="ACT",
+                fallback_step_id="second",
+            ),
+            PlanStep(
+                step_id="second",
+                name="second",
+                action_type="ACT",
+                fallback_step_id="first",
+            ),
+        ],
+    )
+    called: list[bool] = []
+
+    def action(_step, _state, _context):
+        called.append(True)
+        return True
+
+    result = EpisodicSimulator().simulate_plan(plan, {}, action)
+
+    assert called == []
+    assert result.succeeded is False
+    assert "plan contains a circular dependency" in result.errors
     assert result.outcomes[0]["is_simulation"] is True
 
 

@@ -11,9 +11,11 @@ from pydantic import BaseModel, Field
 
 from .planning import (
     DeterministicPlanExecutor,
+    DeterministicPlanVerifier,
     PlanArtifact,
+    PlanExecutionContext,
     PlanExecutionResult,
-    PlanStep,
+    StepAction,
 )
 
 
@@ -25,6 +27,8 @@ class EpisodicSimulationResult(BaseModel):
     """The ephemeral trace and cloned state produced by one prospective rollout."""
 
     workspace_state: dict[str, Any]
+    succeeded: bool = False
+    errors: list[str] = Field(default_factory=list)
     percepts: list[dict[str, Any]] = Field(default_factory=list)
     actions: list[dict[str, Any]] = Field(default_factory=list)
     outcomes: list[dict[str, Any]] = Field(default_factory=list)
@@ -61,6 +65,7 @@ class EpisodicSimulator:
             simulated_outcomes.append(outcome)
         return EpisodicSimulationResult(
             workspace_state=sandbox,
+            succeeded=True,
             percepts=simulated_percepts,
             actions=simulated_actions,
             outcomes=simulated_outcomes,
@@ -70,10 +75,22 @@ class EpisodicSimulator:
         self,
         plan: PlanArtifact,
         workspace_state: Mapping[str, Any],
-        action: Callable[[PlanStep, dict[str, Any]], bool | None] | None = None,
+        action: StepAction | None = None,
     ) -> EpisodicSimulationResult:
-        """Execute a plan over a clone and expose each step result as a trace."""
-        execution = DeterministicPlanExecutor().execute(plan, workspace_state, action)
+        """Execute a plan prospectively with pure, side-effect-free callbacks.
+
+        Callbacks receive ``PlanExecutionContext(is_simulation=True)`` and must
+        not write production state, memory, network services, or external devices.
+        """
+        verification = DeterministicPlanVerifier().verify(plan, workspace_state)
+        if not verification.valid:
+            return self._invalid_plan_result(workspace_state, verification.errors)
+        execution = DeterministicPlanExecutor().execute(
+            plan,
+            workspace_state,
+            action,
+            execution_context=PlanExecutionContext(is_simulation=True),
+        )
         return self._plan_result(execution)
 
     def commit_to_production_memory(
@@ -138,9 +155,22 @@ class EpisodicSimulator:
         ]
         return EpisodicSimulationResult(
             workspace_state=copy.deepcopy(execution.workspace_state),
+            succeeded=execution.succeeded,
+            errors=list(execution.errors),
             percepts=[],
             actions=actions,
             outcomes=outcomes,
+        )
+
+    def _invalid_plan_result(
+        self, workspace_state: Mapping[str, Any], errors: list[str]
+    ) -> EpisodicSimulationResult:
+        """Return a tagged failure without executing an invalid simulated plan."""
+        return EpisodicSimulationResult(
+            workspace_state=copy.deepcopy(dict(workspace_state)),
+            succeeded=False,
+            errors=list(errors),
+            outcomes=[self._tag({"succeeded": False, "errors": list(errors)})],
         )
 
     @staticmethod

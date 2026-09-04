@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
@@ -118,6 +119,12 @@ class PlanArtifact(BaseModel):
         step_ids = [step.step_id for step in self.steps]
         if len(step_ids) != len(set(step_ids)):
             raise ValueError("plan step ids must be unique")
+        if any(
+            step.fallback_step_id == step.step_id
+            for step in self.steps
+            if step.fallback_step_id is not None
+        ):
+            raise ValueError("a plan step cannot use itself as its fallback")
         unknown_fallbacks = [
             step.fallback_step_id
             for step in self.steps
@@ -359,20 +366,14 @@ class DeterministicPlanVerifier:
     ) -> dict[str, set[str]]:
         """Build a graph whose edges run from a step to what it depends on."""
         graph = {step.step_id: set() for step in plan.steps}
-        for step in plan.steps:
+        for index, step in enumerate(plan.steps):
             if step.fallback_step_id is not None:
                 graph[step.step_id].add(step.fallback_step_id)
             for condition in step.preconditions:
                 if precondition_holds(condition, initial_state):
                     continue
                 graph[step.step_id].update(
-                    producer.step_id
-                    for producer in plan.steps
-                    if producer.step_id != step.step_id
-                    and any(
-                        _effect_can_establish(effect, condition)
-                        for effect in producer.effects
-                    )
+                    _causal_producer_ids(plan.steps, index, condition)
                 )
         return graph
 
@@ -391,12 +392,33 @@ def _effect_can_establish(effect: PlanEffect, condition: PlanPrecondition) -> bo
     if effect.key != condition.key:
         return False
     if effect.op is PlanEffectOp.DELETE:
-        return condition.op is PreconditionOp.NOT_EQUAL
+        return False
     if effect.op is PlanEffectOp.SET:
         return precondition_holds(condition, {effect.key: effect.value})
     if effect.op is PlanEffectOp.INCREMENT:
         return condition.op in {PreconditionOp.GREATER_EQUAL, PreconditionOp.LESS_EQUAL}
     return condition.op in {PreconditionOp.CONTAINS, PreconditionOp.NOT_EMPTY}
+
+
+def _causal_producer_ids(
+    steps: list[PlanStep], consumer_index: int, condition: PlanPrecondition
+) -> set[str]:
+    """Prefer preceding producers so later redundant effects do not form cycles."""
+    preceding = _producer_ids(steps[:consumer_index], condition)
+    if preceding:
+        return preceding
+    return _producer_ids(steps[consumer_index + 1 :], condition)
+
+
+def _producer_ids(
+    steps: list[PlanStep], condition: PlanPrecondition
+) -> set[str]:
+    """Return declared steps whose effects could establish one predicate."""
+    return {
+        step.step_id
+        for step in steps
+        if any(_effect_can_establish(effect, condition) for effect in step.effects)
+    }
 
 
 def _visit_for_cycle(
@@ -418,7 +440,14 @@ def _visit_for_cycle(
     return False
 
 
-StepAction = Callable[[PlanStep, dict[str, Any]], bool | None]
+@dataclass(frozen=True, slots=True)
+class PlanExecutionContext:
+    """Execution mode supplied to every action callback."""
+
+    is_simulation: bool = False
+
+
+StepAction = Callable[[PlanStep, dict[str, Any], PlanExecutionContext], bool | None]
 
 
 class DeterministicPlanExecutor:
@@ -429,16 +458,28 @@ class DeterministicPlanExecutor:
         plan: PlanArtifact,
         workspace_state: Mapping[str, Any],
         action: StepAction | None = None,
+        execution_context: PlanExecutionContext | None = None,
     ) -> PlanExecutionResult:
         """Execute declared steps once, redirecting failures to declared fallbacks."""
         state = copy.deepcopy(dict(workspace_state))
+        context = execution_context or PlanExecutionContext()
         steps = {step.step_id: step for step in plan.steps}
         trace: list[PlanStepExecution] = []
         transitions: list[tuple[str, str]] = []
         errors: list[str] = []
         completed: set[str] = set()
         for step in plan.steps:
-            self._execute_chain(step, steps, state, action, completed, trace, transitions, errors)
+            self._execute_chain(
+                step,
+                steps,
+                state,
+                action,
+                context,
+                completed,
+                trace,
+                transitions,
+                errors,
+            )
         return PlanExecutionResult(
             succeeded=not errors,
             workspace_state=state,
@@ -453,6 +494,7 @@ class DeterministicPlanExecutor:
         steps: Mapping[str, PlanStep],
         state: dict[str, Any],
         action: StepAction | None,
+        execution_context: PlanExecutionContext,
         completed: set[str],
         trace: list[PlanStepExecution],
         transitions: list[tuple[str, str]],
@@ -461,12 +503,14 @@ class DeterministicPlanExecutor:
         """Follow one failure path, stopping deterministically on a repeat."""
         step = first_step
         chain: set[str] = set()
-        while step.step_id not in completed:
+        while True:
             if step.step_id in chain:
                 errors.append(f"execution fallback cycle at step {step.step_id}")
                 return
+            if step.step_id in completed:
+                return
             chain.add(step.step_id)
-            execution = self._attempt_step(step, state, action)
+            execution = self._attempt_step(step, state, action, execution_context)
             trace.append(execution)
             completed.add(step.step_id)
             if execution.status is PlanStepStatus.SUCCEEDED:
@@ -480,7 +524,10 @@ class DeterministicPlanExecutor:
 
     @staticmethod
     def _attempt_step(
-        step: PlanStep, state: dict[str, Any], action: StepAction | None
+        step: PlanStep,
+        state: dict[str, Any],
+        action: StepAction | None,
+        execution_context: PlanExecutionContext,
     ) -> PlanStepExecution:
         """Run one action at most retry-count plus one times before applying effects."""
         if not all(precondition_holds(condition, state) for condition in step.preconditions):
@@ -491,7 +538,9 @@ class DeterministicPlanExecutor:
             )
         for attempt in range(1, step.max_retries + 2):
             try:
-                successful = action(step, state) if action is not None else True
+                successful = (
+                    action(step, state, execution_context) if action is not None else True
+                )
             except Exception as error:  # action adapters are an execution boundary
                 successful = False
                 failure = str(error)

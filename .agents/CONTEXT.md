@@ -16476,3 +16476,39 @@ Verification:
 NOT done: no production memory/store, NATS, or action-service wiring was
 introduced. These pure planning and quarantine contracts await later
 integration work.
+
+## 2026-09-04 -- Codex Phase 06 Package A peer-review fix round
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Fallback chain cycle detection runs before completed-step handling, so
+  attempted fallback cycles fail closed with an execution error.
+- Action callbacks receive `PlanExecutionContext`; prospective callbacks see
+  `is_simulation=True` and are documented as pure and side-effect-free.
+- Simulations now fail closed for invalid plans and expose explicit success and
+  error fields for invalid or failed executions.
+- Causal producer discovery prefers declared preceding producers, avoiding
+  false cycles from later redundant effects. DELETE cannot establish NOT_EQUAL
+  because missing values do not satisfy that predicate.
+- Plan artifacts reject self-referential fallback steps.
+
+Verification:
+
+- Focused suite: 20 passed, zero failures, and zero errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` passed with no D, E, or F functions.
+- Mutation check: disabling the fallback-cycle guard failed the dedicated
+  fallback-cycle regression; the correct guard was restored.
+- Changed Phase 06 code and documentation passed 7-bit ASCII and diff checks.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
