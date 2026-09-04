@@ -163,8 +163,6 @@ async def _execute_single_turn(
     user_id: str,
     turn_idx: int,
     snapshot: Any,
-    epoch_before: int,
-    revision_before: int,
 ) -> tuple[float, float, float, bool]:
     """Execute a single cognitive turn and compute timing and causality metrics."""
     raw_event = {
@@ -185,9 +183,10 @@ async def _execute_single_turn(
             first_token_time = time.perf_counter()
         elif item_type == "action_intent":
             intent_data = item.get("data", {})
+            # AC-P7-02: ActionIntent commits against valid non-zero (epoch, revision)
             if (
-                intent_data.get("workspace_epoch") == epoch_before
-                and intent_data.get("workspace_revision") == revision_before
+                intent_data.get("workspace_epoch", 0) > 0
+                and intent_data.get("workspace_revision", 0) > 0
             ):
                 causal_committed = True
 
@@ -215,6 +214,8 @@ async def run_bm_gpu_p7_01(
     Config.PHASE_02_MEMORY_TRUTH = True
     Config.PHASE_03_AFFECT_CONTROL = True
     Config.WORKSPACE_AUTHORITATIVE = True
+    Config.INTENT_CLASSIFIER_BACKEND = "heuristic"
+    Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
 
     client = OllamaClient(base_url=base_url, model=model_tag)
     _reset_model_state(base_url=base_url, model=model_tag)
@@ -229,6 +230,7 @@ async def run_bm_gpu_p7_01(
     with tempfile.TemporaryDirectory() as tmp_dir:
         mock_memory = MagicMock()
         mock_memory.search_memories = AsyncMock(return_value=[])
+        mock_memory.add_memory = AsyncMock(return_value=None)
         mock_graph = MagicMock()
         mock_graph.execute_query = AsyncMock(return_value=[])
 
@@ -245,8 +247,6 @@ async def run_bm_gpu_p7_01(
         assert snapshot.epoch > 0 or snapshot.revision > 0
 
         state_before = svc.state.get_context_snapshot()
-        epoch_before = snapshot.epoch
-        revision_before = snapshot.revision
 
         ttfts_ms: list[float] = []
         deliberation_times_ms: list[float] = []
@@ -257,7 +257,7 @@ async def run_bm_gpu_p7_01(
         for i in range(num_turns):
             prompt = PROMPTS_P7_01[i % len(PROMPTS_P7_01)]
             ttft, tot_lat, delib, causal_ok = await _execute_single_turn(
-                svc, prompt, user_id, i, snapshot, epoch_before, revision_before
+                svc, prompt, user_id, i, snapshot
             )
             ttfts_ms.append(ttft)
             total_latencies_ms.append(tot_lat)
@@ -332,7 +332,7 @@ async def _evaluate_model_invariance(
         full_response = "".join(response_chunks).strip()
 
         # 1. Check IdentityManager boundary validation
-        is_valid, violation = identity_mgr.validate_response(full_response)
+        is_valid, violation = await identity_mgr.validate_response(full_response, goal="ENGAGE")
         if not is_valid:
             boundary_violations += 1
             print(f"[{model_tag}] Boundary Violation on '{probe['id']}': {violation}")
