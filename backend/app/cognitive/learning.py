@@ -8,7 +8,16 @@ from ..measure_trace import trace as _measure_trace
 from ..state.graph_db import GraphDB
 from .identity import IdentityManager
 from .json_extract import extract_first_json_value
-from .learning_governance import LearningGovernor
+from .learning_governance import (
+    LearningGovernor,
+    LearningRiskClass,
+)
+from .learning_governance import (
+    LearningProposal as GovernedLearningProposal,
+)
+from .learning_governance import (
+    LearningProposalStatus as GovernedLearningProposalStatus,
+)
 from .learning_review import LearningReviewQueue
 
 logger = logging.getLogger("reflection")
@@ -33,7 +42,7 @@ class ReflectionService:
         self.vector = pg_vector
         # `persona_file=None` on the fallback, not `AUTO_DISCOVER`. The real
         # path injects `CognitiveService`'s manager and never reaches this, so
-        # anything that does get here is a reflection service standing alone —
+        # anything that does get here is a reflection service standing alone --
         # and one that walked up the tree to adopt whatever `config/persona.toml`
         # happened to be checked out would be evolving a persona nobody wired to
         # it. A default identity is a safe fallback; a *discovered* one is not.
@@ -42,7 +51,28 @@ class ReflectionService:
         self.last_reflection_started_at = 0.0
         # Phase 5C: proposals wait here when Config.LEARNING_REVIEW_REQUIRED.
         self.review_queue = LearningReviewQueue()
-        self.governor = governor or LearningGovernor()
+        # Phase 07: Section 21's hard invariant ("identity core and safety
+        # boundaries are never learned") applied to every persona suggestion
+        # before it ever reaches `review_queue` above. Unlike
+        # `learning_review.py`'s `validate_proposal_safety` -- which only
+        # inspects the always-fixed `target_domain` string this service
+        # passes ("persona_adaptive_traits") and therefore never actually
+        # screens a suggestion's content -- `LearningGovernor.submit` walks
+        # every nested key inside `proposed_value`, so a suggestion that
+        # smuggles a protected (immutable/constitutional) field name cannot
+        # reach a human reviewer or auto-apply. No `state_applier` is
+        # configured: this governor is a content-safety gate, not the thing
+        # that writes persona state -- `review_queue`/`evolve_persona` still
+        # own that, unchanged.
+        #
+        # Fix round (P7-FIX-01/P7-FIX-05): `governor` is now injectable so
+        # `CognitiveService` can pass its own `LearningGovernor` instance in,
+        # giving the whole process one shared, durable proposal registry
+        # instead of two independent audit trails that do not know about
+        # each other. A caller that does not supply one (every existing
+        # standalone construction, including this class's own tests) still
+        # gets a private instance, unchanged from before.
+        self.governor = governor if governor is not None else LearningGovernor()
 
         # AI Friend: Explicit completion signaling for deterministic mesh verification
         self.reflection_done = asyncio.Event()
@@ -281,6 +311,8 @@ class ReflectionService:
                     contradicts_id = await self._find_persona_contradiction(
                         suggestions
                     )
+                    if self._governed_persona_proposal(suggestions, contradicts_id) is None:
+                        return
                     self.review_queue.submit(suggestions, contradicts_id=contradicts_id)
                 else:
                     await self.identity.evolve_persona(suggestions)
@@ -290,6 +322,67 @@ class ReflectionService:
                 )
         except Exception as e:
             logger.error(f"Identity evolution failure: {e}")
+
+    def _governed_persona_proposal(
+        self, suggestions: dict[str, Any], contradicts_id: str | None
+    ) -> GovernedLearningProposal | None:
+        """Section 21's hard invariant, applied via a real `LearningProposal`
+        (learning_governance.py) before `suggestions` reaches `review_queue`.
+
+        `suggestions` is copied into `proposed_value` key-for-key, unmodified
+        -- the governed proposal's audited payload must describe exactly
+        the value `review_queue`/`evolve_persona` actually applies, not a
+        renamed stand-in. Keeping every field a real, scannable dict key is
+        also exactly what lets a genuinely smuggled protected field name
+        (e.g. a suggestion that somehow carried a literal `mood_decay_rate`
+        key) still get caught and rejected below.
+        `learning_governance.py`'s `_ADAPTIVE_ALLOWED_FIELD_NAMES`
+        explicitly exempts `evolve_persona`'s own `new_traits` key (an
+        ADAPTIVE-tier list of trait *additions*, see
+        `PersonaProfile.learn_traits`) from the single-word `traits` check
+        that would otherwise false-positive on it -- see that constant's
+        docstring for the full collision history and why the exemption is
+        scoped narrowly rather than weakening the check generally.
+
+        Returns `None` when `LearningGovernor.submit` rejects the proposal
+        outright -- it targets the immutable persona core, a safety
+        invariant, or a CONSTITUTIONAL-tier field -- and the caller must not
+        queue that suggestion for review at all. Otherwise returns the
+        proposal after an always-LOW-risk approval: the human `review_queue`
+        below remains the actual approval gate for a suggestion's *content*
+        (relationship, new_traits, ...), so this governor is a hard
+        content-safety filter ahead of it, not a second reviewer
+        duplicating its job.
+        """
+        proposal = GovernedLearningProposal(
+            source_records=[contradicts_id] if contradicts_id else [],
+            target_domain="identity.reflection_persona_suggestion",
+            proposed_value=dict(suggestions),
+            expected_effect="reflection_persona_update",
+            risk_class=LearningRiskClass.LOW,
+            rollback_value={
+                "relationship_before": self.identity.history.get("relationship")
+            },
+        )
+        try:
+            self.governor.submit(proposal)
+        except ValueError as error:
+            logger.warning(
+                "Persona suggestion rejected by LearningGovernor "
+                "(protected region): %s",
+                error,
+            )
+            return None
+        self.governor.validate(proposal.proposal_id)
+        approved = self.governor.approve(proposal.proposal_id)
+        if approved.status is not GovernedLearningProposalStatus.APPROVED:
+            logger.warning(
+                "LearningGovernor did not approve persona proposal %s: %s",
+                proposal.proposal_id,
+                approved.rejection_reason,
+            )
+            return None
+        return approved
 
     async def _find_persona_contradiction(
         self, suggestions: dict[str, Any]
@@ -383,11 +476,11 @@ class ReflectionService:
 
     async def _consolidate(self, episodes: list[dict[str, Any]]):
         """
-        Background Solid State Consolidation (§7):
+        Background Solid State Consolidation (Section 7):
         1. Fact Resolution (Deduplication & Gating)
         2. Persona Evolution (Locked Logic)
 
-        Episodes now use the enriched schema (§6.1 — Tulving + Amory):
+        Episodes now use the enriched schema (Section 6.1 -- Tulving + Amory):
         {id, event, context, emotion_vector, appraisal, relationship_delta, response}
         """
         self.is_reflecting = True

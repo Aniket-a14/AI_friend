@@ -565,7 +565,12 @@ class TestBackwardCompatibility:
     async def test_flag_off_skips_candidate_selection_even_with_memory_activations(
         self, decision_service, monkeypatch
     ):
+        # Phase 07: candidate selection is reached when EITHER Phase 02 or
+        # Phase 03 is on (see decision.py's `_plan_social_response`), and
+        # both now default True -- so a genuine "both flags off" backward-
+        # compatibility test must monkeypatch both explicitly.
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         disputed_memory = MemoryActivation(
             record_id="belief-off",
             record_type="belief",
@@ -588,6 +593,7 @@ class TestBackwardCompatibility:
         self, monkeypatch, mock_llm_service, mock_memory_store
     ):
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         identity_manager = MagicMock()
         identity_manager.immutable_core = {"boundaries": []}
         decision_service = DecisionService(
@@ -627,6 +633,7 @@ class TestBackwardCompatibility:
         """The new `memory_activations` kwarg is optional -- every caller
         that predates it (this call omits it entirely) must keep working."""
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         identity_manager = MagicMock()
         identity_manager.immutable_core = {"boundaries": []}
         decision_service = DecisionService(
@@ -1154,6 +1161,176 @@ class TestMemoriesToActivationsAdapter:
 
         assert activation.relevance_score == pytest.approx(0.42)
         assert activation.record_id == "legacy-0"
+
+
+# --------------------------------------------------------------------------
+# Fix round: B2 -- real contradiction/outage propagation in the adapter
+# --------------------------------------------------------------------------
+
+
+class TestMemoriesToActivationsContradictionAndOutage:
+    def test_explicit_contradiction_state_on_the_dict_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "contradiction_state": "CORRECTION"}]
+        )[0]
+        assert activation.contradiction_state == "CORRECTION"
+
+    def test_unrecognized_contradiction_state_falls_back_to_none(self):
+        activation = memories_to_activations(
+            [{"content": "x", "contradiction_state": "not-a-real-state"}]
+        )[0]
+        assert activation.contradiction_state == "NONE"
+
+    def test_linked_belief_record_status_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "belief_record": {"status": "DISPUTED"}}]
+        )[0]
+        assert activation.contradiction_state == "DISPUTED"
+
+    def test_linked_belief_record_active_status_maps_to_none(self):
+        activation = memories_to_activations(
+            [{"content": "x", "belief_record": {"status": "ACTIVE"}}]
+        )[0]
+        assert activation.contradiction_state == "NONE"
+
+    def test_linked_belief_record_contradiction_type_is_propagated(self):
+        """A temporal_store.py ContradictionDecision-shaped link surfaces
+        CONFLICT/UPDATE/CORRECTION/ELABORATION, not just a BeliefRecord's
+        own ACTIVE/SUPERSEDED/INVALIDATED/DISPUTED status."""
+        activation = memories_to_activations(
+            [{"content": "x", "belief": {"contradiction_type": "ELABORATION"}}]
+        )[0]
+        assert activation.contradiction_state == "ELABORATION"
+
+    def test_explicit_outage_flag_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "outage_flag": True}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_error_key_is_treated_as_an_outage(self):
+        activation = memories_to_activations(
+            [{"content": "x", "error": "retrieval backend unavailable"}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_ordinary_legacy_dict_still_defaults_to_none_and_no_outage(self):
+        """Regression guard: a plain legacy dict with neither key must keep
+        resolving to the pre-Phase-07 default -- this adapter must never
+        invent a dispute or an outage the source data never asserted."""
+        activation = memories_to_activations([{"content": "x"}])[0]
+        assert activation.contradiction_state == "NONE"
+        assert activation.outage_flag is False
+
+
+# --------------------------------------------------------------------------
+# Fix round (P7-FIX-06): nested metadata inspection and whole-retrieval
+# outage surfacing via last_search_error.
+# --------------------------------------------------------------------------
+
+
+class TestMemoriesToActivationsNestedMetadataAndSearchError:
+    def test_nested_metadata_contradiction_state_is_propagated(self):
+        """SurfacingAgent places source truth fields under each surfaced
+        memory's own `metadata` dict rather than at the top level."""
+        activation = memories_to_activations(
+            [{"content": "x", "metadata": {"contradiction_state": "UPDATE"}}]
+        )[0]
+        assert activation.contradiction_state == "UPDATE"
+
+    def test_top_level_contradiction_state_wins_over_nested_metadata(self):
+        activation = memories_to_activations(
+            [
+                {
+                    "content": "x",
+                    "contradiction_state": "CORRECTION",
+                    "metadata": {"contradiction_state": "UPDATE"},
+                }
+            ]
+        )[0]
+        assert activation.contradiction_state == "CORRECTION"
+
+    def test_nested_metadata_belief_record_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "metadata": {"belief_record": {"status": "DISPUTED"}}}]
+        )[0]
+        assert activation.contradiction_state == "DISPUTED"
+
+    def test_nested_metadata_outage_flag_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "metadata": {"outage_flag": True}}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_nested_metadata_error_key_is_treated_as_an_outage(self):
+        activation = memories_to_activations(
+            [{"content": "x", "metadata": {"error": "backend unavailable"}}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_non_dict_metadata_is_ignored_without_raising(self):
+        activation = memories_to_activations(
+            [{"content": "x", "metadata": "not a dict"}]
+        )[0]
+        assert activation.contradiction_state == "NONE"
+        assert activation.outage_flag is False
+
+    def test_last_search_error_with_empty_surfaced_memories_yields_outage_activation(
+        self,
+    ):
+        """AC-P7-06: a whole-retrieval failure that surfaced zero memories
+        must not be silently indistinguishable from "nothing relevant was
+        found" -- it must still produce an outage_flag=True activation so
+        pipeline.py's retrieval_degraded computation can see it."""
+        activations = memories_to_activations(
+            [], last_search_error="embedding service returned no vector"
+        )
+        assert len(activations) == 1
+        assert activations[0].outage_flag is True
+        assert activations[0].contradiction_state == "NONE"
+
+    def test_last_search_error_with_none_surfaced_memories_yields_outage_activation(
+        self,
+    ):
+        activations = memories_to_activations(
+            None, last_search_error="Memory search failed: connection reset"
+        )
+        assert len(activations) == 1
+        assert activations[0].outage_flag is True
+
+    def test_last_search_error_none_and_empty_memories_still_yields_empty_list(self):
+        """Regression guard: omitting last_search_error must reproduce the
+        exact pre-fix-round behavior for empty/absent surfaced memories."""
+        assert memories_to_activations([]) == []
+        assert memories_to_activations(None) == []
+        assert memories_to_activations([], last_search_error=None) == []
+        assert memories_to_activations([], last_search_error="") == []
+
+    def test_last_search_error_is_not_duplicated_when_a_real_outage_already_present(
+        self,
+    ):
+        """A retrieval that surfaced one already-outage-flagged memory plus
+        a whole-search error must not report the outage twice."""
+        activations = memories_to_activations(
+            [{"content": "x", "outage_flag": True}],
+            last_search_error="Memory search failed: timeout",
+        )
+        assert len(activations) == 1
+        assert activations[0].outage_flag is True
+
+    def test_last_search_error_appends_outage_activation_alongside_real_content(self):
+        """A partial failure -- some memories surfaced (e.g. from an L1
+        cache) while the underlying search itself also errored -- must
+        still surface the outage rather than let the present content mask
+        it."""
+        activations = memories_to_activations(
+            [{"content": "cached memory", "relevance": 0.9}],
+            last_search_error="Memory search failed: timeout",
+        )
+        assert len(activations) == 2
+        assert activations[0].structured_value["content"] == "cached memory"
+        assert activations[0].outage_flag is False
+        assert activations[1].outage_flag is True
 
 
 class TestProductionMemoryWiring:

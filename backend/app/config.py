@@ -223,24 +223,31 @@ class AppSettings(BaseSettings):
     # False preserves the existing streaming text contract.
     LLM_TYPED_REALIZATION_ENABLED: bool = False
     # Phase 02 Package B: gates ActionCandidate generation / CandidateSelector
-    # wiring in decision.py and pipeline.py. False (default during
-    # development) preserves exact Phase 1 behavior -- no candidates are
-    # generated, no rejected_alternatives are recorded, and Stage 6's
-    # ActionIntent.kind is derived the old way. Flip once Package A's
-    # temporal memory store (backend/app/state/temporal_store.py) is wired
-    # in and candidate-driven action selection has been verified end to end.
-    PHASE_02_MEMORY_TRUTH: bool = False
+    # wiring in decision.py and pipeline.py. Flipped True in Phase 07 --
+    # Package A's temporal memory store (backend/app/state/temporal_store.py)
+    # is wired in and candidate-driven action selection has been verified
+    # end to end. Callers that must reproduce exact pre-Phase-02 behavior
+    # (backward-compatibility tests) now monkeypatch this back to False
+    # explicitly rather than relying on the default.
+    PHASE_02_MEMORY_TRUTH: bool = True
 
     # Phase 03 Package B: gates global-control scoring modulation and
     # emotion-regulation candidate generation (REAPPRAISE,
-    # REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py. False
-    # (default during development) preserves exact pre-Phase-03 behavior --
-    # no regulation candidates are generated, decision.py never passes
-    # global_controls to score_and_select, and Stage 8 never dispatches to
-    # the new regulation executors. Flip once Package A's global_controls.py
-    # and appraisal.py are wired in and end-to-end regulation selection has
-    # been verified.
-    PHASE_03_AFFECT_CONTROL: bool = False
+    # REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py. Flipped
+    # True in Phase 07 -- Package A's global_controls.py and appraisal.py
+    # are wired in and end-to-end regulation selection has been verified.
+    # Callers that must reproduce exact pre-Phase-03 behavior now
+    # monkeypatch this back to False explicitly rather than relying on the
+    # default.
+    PHASE_03_AFFECT_CONTROL: bool = True
+
+    # Phase 07: production turns supply an authoritative workspace instance
+    # to ActionIntent rather than falling back to (0, 0) -- see
+    # state/session_state.py's `workspace_authoritative_enabled()`. Declared
+    # here as a real field (it previously only existed as a `getattr`
+    # default inside that function) so the production default is
+    # discoverable from Config itself rather than only from the call site.
+    WORKSPACE_AUTHORITATIVE: bool = True
 
     # P1-1: the control tier's JetStream consumer settings (system.tick).
     # Both were previously implicit -- a 30s server-default ack_wait and
@@ -315,8 +322,13 @@ class AppSettings(BaseSettings):
     # without meaningfully delaying a real overnight consolidation window.
     REST_PHASE_REPLAY_INTERVAL_SECONDS: float = 1800.0
 
-    # Phase 5C (§14 MODIFY): False preserves today's tested auto-apply.
-    LEARNING_REVIEW_REQUIRED: bool = False
+    # Phase 5C (Section 14 MODIFY): flipped True in Phase 07 -- persona-trait
+    # suggestions from reflection now require governed review
+    # (LearningGovernor, cognitive/learning_governance.py) rather than
+    # auto-applying directly via IdentityManager.evolve_persona. Tests that
+    # exercise the legacy auto-apply path monkeypatch this back to False
+    # explicitly.
+    LEARNING_REVIEW_REQUIRED: bool = True
     # How many recent high-importance memories one rest-phase sweep samples
     # for re-scoring/pruning via the existing `apply_actr_decay` pipeline.
     REST_PHASE_REPLAY_LIMIT: int = 20

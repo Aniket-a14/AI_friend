@@ -206,11 +206,43 @@ _JOINED_PROTECTED: tuple[tuple[str, tuple[str, ...]], ...] = tuple(
     ("".join(p), p) for p in _PROTECTED_PHRASES if len(p) >= 2
 )
 
+# Fix round (orchestration/PHASE_07/FIX_PLAN.md P7-FIX-05): ADAPTIVE-tier
+# operation keys explicitly recognized as safe despite colliding, at the
+# single-word-token level, with an unrelated CONSTITUTIONAL field name.
+# `new_traits` -- the key `IdentityManager.evolve_persona` reads to call
+# `PersonaProfile.learn_traits`, an ADAPTIVE-tier, capped trait-*addition*
+# operation -- tokenizes to `("new", "traits")`, and "traits" alone is a
+# protected single-word marker here because `PersonaProfile.traits` (an
+# unrelated, fixed-at-creation CONSTITUTIONAL core temperament list)
+# happens to be named exactly that. Rejecting every reflection suggestion
+# carrying `new_traits` was a false positive on the one suggestion shape
+# `ReflectionService._consolidate_persona` actually produces, not a gap in
+# the scan -- see that module's own history for the workaround (renaming
+# the key before handing it to the governor) this allowlist replaces.
+#
+# Matched as an exact, case-sensitive, un-normalized string, deliberately
+# not run through `_normalize_domain_tokens`: an obfuscated spelling
+# ("New_Traits", "new.traits") gains an attacker nothing, since
+# `evolve_persona`'s own lookup (`"new_traits" in suggestions`) would not
+# recognize it as the operation either, so normalizing this allowlist
+# entry would only create a bypass with no matching legitimate use. A bare
+# `"traits"` key, or `new_traits` spelled any other way, is still caught by
+# the checks below exactly as before -- this exempts one specific,
+# verified-safe key, not the word "traits" in general.
+_ADAPTIVE_ALLOWED_FIELD_NAMES: frozenset[str] = frozenset({"new_traits"})
+
 
 def _string_names_protected_region(text: str) -> tuple[str, ...] | None:
     """The matched phrase if `text` names a protected region under any
-    delimiter, camelCase, joined, or casing variation; `None` otherwise."""
+    delimiter, camelCase, joined, or casing variation; `None` otherwise.
+
+    Checks `_ADAPTIVE_ALLOWED_FIELD_NAMES` first, against the raw
+    (un-normalized) text -- see that constant's docstring for why an exact,
+    case-sensitive match is the correct scope for that exemption.
+    """
     if not text:
+        return None
+    if text in _ADAPTIVE_ALLOWED_FIELD_NAMES:
         return None
     tokens = _normalize_domain_tokens(text)
     for t in tokens:

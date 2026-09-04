@@ -214,7 +214,10 @@ async def test_silent_reasoning_stripping():
 
 @pytest.mark.asyncio
 async def test_sleep_dreaming_neo4j():
-    # Mocks Neo4j entity retrieval and verifies that generated dreams are saved as vector memories with the dream source tag.
+    # Mocks Neo4j entity retrieval and verifies that generated dreams are
+    # NEVER written into autobiographical memory (epistemic quarantine,
+    # Sections 19/37, Invariant 12: generated background content cannot
+    # self-promote to truth) while the graph query itself still runs.
     mock_state_service = MagicMock()
     mock_state_service.get_context_snapshot.return_value = {"fatigue": 0.9}
 
@@ -243,12 +246,11 @@ async def test_sleep_dreaming_neo4j():
     await agent._run_dream_sequence()
 
     mock_graph_db.execute_query.assert_awaited()
-    mock_memory_store.add_memory.assert_awaited_once_with(
-        content="[Dream Insight] I had a dream about A, B, and C.",
-        importance=0.6,
-        emotion=0.4,
-        source="subconscious_dream",
-    )
+    mock_memory_store.add_memory.assert_not_called()
+    assert not any(
+        call.kwargs.get("source") == "subconscious_dream"
+        for call in mock_memory_store.add_memory.await_args_list
+    ), "dream text must never be added to autobiographical memory (quarantine)"
 
     dream_query = mock_graph_db.execute_query.await_args.args[0]
     assert "rand()" not in dream_query.lower(), (
