@@ -65,7 +65,14 @@ class BackgroundScheduler:
     def __init__(self) -> None:
         self._queue: list[BackgroundJob] = []
         self._accepted_keys: set[tuple[str, float]] = set()
-        self.is_foreground_active: bool = False
+        # Reentrant reference count rather than a bool: a nested or
+        # overlapping foreground activation (e.g. a second turn arriving,
+        # or a caller with its own preempt/resume pair around a sub-scope)
+        # must not let an inner `resume_foreground_idle()` flip the
+        # scheduler back to idle while an outer preemption is still in
+        # effect. `is_foreground_active` below is derived from this count,
+        # never set directly.
+        self._foreground_depth: int = 0
         self._current_task: asyncio.Task | None = None
         self._current_job: BackgroundJob | None = None
         self.last_watermark_by_kind: dict[BackgroundJobKind, float] = {}
@@ -73,6 +80,10 @@ class BackgroundScheduler:
         # caller today, but this is the only record of *why* a job never
         # produced a result, so it is kept rather than discarded.
         self.errors: list[dict[str, Any]] = []
+
+    @property
+    def is_foreground_active(self) -> bool:
+        return self._foreground_depth > 0
 
     def enqueue(self, job: BackgroundJob) -> bool:
         """Insert `job` into the priority queue (descending priority,
@@ -92,16 +103,22 @@ class BackgroundScheduler:
         return True
 
     def preempt(self) -> None:
-        """Mark the foreground as active and immediately cancel whatever
-        background task is currently running. Idempotent -- calling this
-        with nothing in flight just sets the flag."""
-        self.is_foreground_active = True
+        """Increment the foreground activation count and immediately cancel
+        whatever background task is currently running. Reentrant -- calling
+        this while already preempted just raises the depth further, and
+        `resume_foreground_idle()` must be called an equal number of times
+        before `run_next` is allowed to dequeue work again. Safe to call
+        with nothing in flight; it just raises the depth."""
+        self._foreground_depth += 1
         if self._current_task is not None and not self._current_task.done():
             self._current_task.cancel()
 
     def resume_foreground_idle(self) -> None:
-        """Allow `run_next` to dequeue background work again."""
-        self.is_foreground_active = False
+        """Decrement the foreground activation count. `run_next` only
+        dequeues work again once this has been called as many times as
+        `preempt()` was -- the count never drops below zero, so an extra,
+        unmatched resume is a no-op rather than going negative."""
+        self._foreground_depth = max(0, self._foreground_depth - 1)
 
     def _record_error(self, job: BackgroundJob, error: str) -> None:
         self.errors.append(

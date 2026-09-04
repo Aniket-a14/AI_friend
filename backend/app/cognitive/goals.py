@@ -30,6 +30,22 @@ class GoalRecord(BaseModel):
     status: str = "ACTIVE"
     last_progress: float = 0.0
     uncertainty: float = 0.0
+    # Fix round (Architecture Section 11 alignment): a goal's priority is not
+    # just `priority_class` -- Section 11 scores goals from named utility
+    # terms (e.g. urgency, relationship_value) rather than one bare integer,
+    # and a goal can be blocked by explicit constraints, descend from a
+    # parent goal (a sub-goal spawned to satisfy a larger one), cite the
+    # evidence that justified creating it, and expire or self-satisfy on a
+    # condition distinct from `deadline` (a deadline is a hard time cutoff;
+    # `satiation_or_expiry` is a separate watermark for a goal that becomes
+    # moot or self-satisfies, e.g. "check back in an hour" with no failure
+    # mode if skipped). All default to empty/None so every existing
+    # `GoalRecord(...)` construction keeps working unchanged.
+    utility_terms: dict[str, float] = Field(default_factory=dict)
+    constraints: list[str] = Field(default_factory=list)
+    parent: str | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
+    satiation_or_expiry: float | None = None
 
 
 def review_due_goals(

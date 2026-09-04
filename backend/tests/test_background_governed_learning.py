@@ -4,6 +4,7 @@ selection (FINAL_HUMANOID_BRAIN_ARCHITECTURE.md Sections 11, 19, 20, 21, 38).
 """
 
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -20,6 +21,7 @@ from app.cognitive.learning_review import (
     LearningReviewQueue,
     validate_proposal_safety,
 )
+from app.cognitive.pipeline import CognitivePipeline
 
 pytestmark = pytest.mark.asyncio
 
@@ -141,6 +143,61 @@ async def test_background_scheduler_foreground_preemption():
     assert scheduler.is_foreground_active is False
 
 
+def test_background_scheduler_preemption_is_reentrant():
+    """Fix round: `is_foreground_active` is backed by a depth counter, not
+    a bool -- a second, nested preempt() must not be undone by a single
+    resume. The scheduler only goes idle again once resume_foreground_idle()
+    has been called as many times as preempt() was, and an extra, unmatched
+    resume must be a no-op rather than going negative or raising."""
+    scheduler = BackgroundScheduler()
+
+    scheduler.preempt()
+    scheduler.preempt()
+    assert scheduler.is_foreground_active is True
+
+    scheduler.resume_foreground_idle()
+    assert scheduler.is_foreground_active is True
+
+    scheduler.resume_foreground_idle()
+    assert scheduler.is_foreground_active is False
+
+    scheduler.resume_foreground_idle()
+    assert scheduler.is_foreground_active is False
+
+
+async def test_pipeline_execute_resumes_background_on_exception():
+    """Fix round: `CognitivePipeline.execute` wraps its whole body in
+    try/finally so `_maybe_resume_background` runs on every exit, including
+    an exception raised deep inside a stage -- a bare call at the end of the
+    method body (the pre-fix-round approach) only ran on a clean finish and
+    left the scheduler permanently preempted on any of the others."""
+    scheduler = BackgroundScheduler()
+    state = MagicMock()
+    state.last_speculative_intent = None
+
+    perception = AsyncMock()
+    perception.perceive.side_effect = RuntimeError("boom")
+
+    pipeline = CognitivePipeline(
+        perception=perception,
+        appraisal=MagicMock(),
+        state=state,
+        decision=MagicMock(),
+        action=MagicMock(),
+        learning=AsyncMock(),
+        identity=MagicMock(),
+        scheduler=scheduler,
+    )
+
+    with pytest.raises(RuntimeError):
+        async for _ in pipeline.execute(
+            {"event_type": "USER_MESSAGE", "content": "hi"}
+        ):
+            pass
+
+    assert scheduler.is_foreground_active is False
+
+
 # --- Due-goal review --------------------------------------------------------
 
 
@@ -170,10 +227,39 @@ def test_due_goal_review_expiry():
     assert "g1" in notes[0]
 
 
+def test_goal_record_section_11_fields_default_and_settable():
+    """Fix round: GoalRecord must carry Architecture Section 11's named
+    utility terms, blocking constraints, parent/sub-goal linkage, citing
+    evidence, and a satiation/expiry watermark distinct from `deadline` --
+    all optional so every pre-fix-round GoalRecord(...) construction keeps
+    working unchanged."""
+    bare_goal = GoalRecord(goal_id="g1", description="write the report")
+    assert bare_goal.utility_terms == {}
+    assert bare_goal.constraints == []
+    assert bare_goal.parent is None
+    assert bare_goal.evidence_ids == []
+    assert bare_goal.satiation_or_expiry is None
+
+    child_goal = GoalRecord(
+        goal_id="g2",
+        description="draft the intro",
+        parent="g1",
+        utility_terms={"urgency": 0.8, "relationship_value": 0.2},
+        constraints=["must not contradict prior commitment"],
+        evidence_ids=["mem-42"],
+        satiation_or_expiry=12345.0,
+    )
+    assert child_goal.parent == "g1"
+    assert child_goal.utility_terms["urgency"] == 0.8
+    assert child_goal.constraints == ["must not contradict prior commitment"]
+    assert child_goal.evidence_ids == ["mem-42"]
+    assert child_goal.satiation_or_expiry == 12345.0
+
+
 # --- Governed learning proposals --------------------------------------------
 
 
-def test_learning_proposal_approval_and_durable_rollback():
+async def test_learning_proposal_approval_and_durable_rollback():
     """An APPROVED proposal must roll back to exactly its rollback_value,
     the queue must durably remember the ROLLED_BACK status (not just hand
     back a transient copy), and neither approve nor rollback may be
@@ -186,10 +272,10 @@ def test_learning_proposal_approval_and_durable_rollback():
         rollback_value="neutral",
     )
 
-    submitted = queue.submit(proposal)
+    submitted = queue.submit(proposal=proposal)
     assert submitted.status == LearningProposalStatus.PENDING
 
-    approved = queue.approve(proposal.proposal_id)
+    approved = await queue.approve(proposal.proposal_id)
     assert approved is not None
     assert approved.status == LearningProposalStatus.APPROVED
 
@@ -203,17 +289,17 @@ def test_learning_proposal_approval_and_durable_rollback():
 
     # Cannot roll back twice, or approve after rollback.
     assert queue.rollback(proposal.proposal_id) == (None, None)
-    assert queue.approve(proposal.proposal_id) is None
+    assert await queue.approve(proposal.proposal_id) is None
 
 
-def test_learning_proposal_rejection_cannot_be_rolled_back():
+async def test_learning_proposal_rejection_cannot_be_rolled_back():
     queue = LearningReviewQueue()
     proposal = LearningProposal(
         target_domain="reply_length",
         proposed_value="shorter",
         expected_effect="reduce verbosity",
     )
-    queue.submit(proposal)
+    queue.submit(proposal=proposal)
 
     rejected = queue.reject(proposal.proposal_id, reason="not enough evidence")
 
@@ -232,6 +318,7 @@ def test_learning_proposal_immutable_core_safety_invariant():
         "core_values",
         "safety_boundaries",
         "immutable",
+        "constitutional",
         "persona.name",
         "identity.safety_boundaries.refusal",
     ]
@@ -242,17 +329,94 @@ def test_learning_proposal_immutable_core_safety_invariant():
         with pytest.raises(ValueError):
             validate_proposal_safety(proposal)
         with pytest.raises(ValueError):
-            queue.submit(proposal)
+            queue.submit(proposal=proposal)
         assert queue.get(proposal.proposal_id) is None
 
     # A domain that merely contains "name" as a substring, not as a whole
-    # path segment, must not be caught by the same check.
+    # token, must not be caught by the same check.
     safe_proposal = LearningProposal(
         target_domain="conversation.nickname_style",
         proposed_value="playful",
         expected_effect="warmer nicknames",
     )
-    assert queue.submit(safe_proposal).status == LearningProposalStatus.PENDING
+    assert queue.submit(proposal=safe_proposal).status == LearningProposalStatus.PENDING
+
+
+def test_learning_proposal_immutable_core_bracket_and_case_bypass_rejected():
+    """Fix round: the initial check split target_domain on `.`, `:`, `/`
+    only and required an exact segment match, which brackets and casing
+    could bypass (`persona[name]` is one segment that never equals "name";
+    "PERSONA.CORE_VALUES" was lowercased but "core_values" as one token
+    never appears when the marker itself is two words). Canonicalizing `[`,
+    `]`, and `_` as additional word boundaries and matching contiguous
+    token phrases closes both bypasses."""
+    bypass_domains = [
+        "persona[name]",
+        "PERSONA.CORE_VALUES",
+        "identity:core_values",
+        "identity/immutable/rule",
+        "rules[constitutional]",
+        "identity[SAFETY_BOUNDARIES]",
+    ]
+    for domain in bypass_domains:
+        proposal = LearningProposal(
+            target_domain=domain, proposed_value="x", expected_effect="y"
+        )
+        with pytest.raises(ValueError):
+            validate_proposal_safety(proposal)
+
+
+async def test_learning_proposal_approve_revalidates_after_mutation():
+    """Fix round: a proposal that was safe at submission time but mutated
+    (pydantic models are not frozen) to target the immutable core before
+    review must be rejected at approval time, not silently applied --
+    submission-time validation alone is not enough once the object can be
+    changed out from under the queue."""
+    queue = LearningReviewQueue()
+    proposal = LearningProposal(
+        target_domain="conversation.tone",
+        proposed_value="warmer",
+        expected_effect="increase warmth",
+    )
+    queue.submit(proposal=proposal)
+
+    proposal.target_domain = "persona.safety_boundaries"
+
+    with pytest.raises(ValueError):
+        await queue.approve(proposal.proposal_id)
+
+    assert queue.get(proposal.proposal_id).status == LearningProposalStatus.PENDING
+
+
+async def test_learning_review_queue_legacy_api_compat():
+    """Fix round: the pre-Phase-04 suggestions-dict workflow
+    (`ReflectionService` in learning.py, and the separately-owned
+    tests/test_learning_review.py) must keep working unchanged alongside
+    the new governed-proposal workflow -- this is Package B's own
+    regression guard for that promise."""
+    direct = LearningProposal(suggestions={"relationship": "Friend"})
+    assert direct.id == direct.proposal_id
+    assert direct.suggestions == {"relationship": "Friend"}
+    assert direct.is_contradiction is False
+
+    queue = LearningReviewQueue()
+    legacy = queue.submit({"relationship": "Trusted Friend"})
+    assert legacy.suggestions == {"relationship": "Trusted Friend"}
+    assert queue.pending() == [legacy]
+
+    contradicting = queue.submit({"relationship": "Stranger"}, contradicts_id="mem-1")
+    assert contradicting.is_contradiction is True
+    assert queue.contradictions() == [contradicting]
+
+    identity = MagicMock()
+    identity.history = {}
+    identity.evolve_persona = AsyncMock()
+
+    applied = await queue.approve(legacy.id, identity)
+    identity.evolve_persona.assert_called_once_with({"relationship": "Trusted Friend"})
+    assert "evolved_learnings" in identity.history
+    assert applied.id == legacy.id
+    assert legacy not in queue.pending()
 
 
 # --- Metacognitive directive and privacy filtering in CandidateSelector ----
@@ -296,6 +460,62 @@ def test_candidate_selector_metacognitive_directive_modulation():
         speak_or_verify, active_goals=[], metacognitive_directive="VERIFY"
     )
     assert winner_verify.candidate_id == "verify3"
+
+
+def test_candidate_selector_abstain_is_a_true_disqualifier():
+    """Fix round: ABSTAIN must disqualify SPEAK outright, not merely
+    out-score it with a large-but-finite penalty -- even a SPEAK candidate
+    with an enormous score must lose to WAIT, and ABSTAIN must refuse to
+    invent a winner when every survivor is SPEAK."""
+    selector = CandidateSelector()
+    candidates = [
+        ActionCandidate(
+            candidate_id="speak", kind="SPEAK", source="policy", score=1_000_000.0
+        ),
+        ActionCandidate(candidate_id="wait", kind="WAIT", source="reflex", score=0.0),
+    ]
+
+    winner, rejected = selector.score_and_select(
+        candidates, active_goals=[], metacognitive_directive="ABSTAIN"
+    )
+
+    assert winner.candidate_id == "wait"
+    assert any(
+        r["candidate_id"] == "speak" and r["reason"] == "abstain_disqualified"
+        for r in rejected
+    )
+
+    with pytest.raises(ValueError):
+        selector.score_and_select(
+            [
+                ActionCandidate(
+                    candidate_id="only-speak", kind="SPEAK", source="policy", score=0.5
+                )
+            ],
+            active_goals=[],
+            metacognitive_directive="ABSTAIN",
+        )
+
+
+def test_candidate_selector_hedge_attaches_marker():
+    """Fix round: HEDGE must attach a concrete, machine-readable marker to
+    the winning candidate so a downstream realizer can add a hedging
+    qualifier without re-deriving the directive; PROCEED must never attach
+    it."""
+    selector = CandidateSelector()
+    candidates = [
+        ActionCandidate(candidate_id="speak", kind="SPEAK", source="policy", score=0.9),
+        ActionCandidate(candidate_id="wait", kind="WAIT", source="reflex", score=0.1),
+    ]
+
+    winner, _ = selector.score_and_select(
+        candidates, active_goals=[], metacognitive_directive="HEDGE"
+    )
+    assert winner.candidate_id == "speak"
+    assert winner.metadata.get("hedge") is True
+
+    winner_default, _ = selector.score_and_select(candidates, active_goals=[])
+    assert winner_default.metadata.get("hedge") is None
 
 
 def test_candidate_selector_cross_person_privacy_rejection():
