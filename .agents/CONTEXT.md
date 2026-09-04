@@ -16545,3 +16545,102 @@ integration work.
 **NOT done:** Live online LoRA gradient fine-tuning in production inference loops (deliberately kept offline via `OfflineAdapterGate`), real physical robot joint actuation, and autonomous unverified modifications to immutable core identity.
 
 All 6 phases of the Humanoid Brain Architecture (`FINAL_HUMANOID_BRAIN_ARCHITECTURE.md`) are now successfully integrated, verified, and complete.
+
+## 2026-09-04 -- Codex independent final system engineering audit
+
+Changed files:
+
+- `orchestration/FINAL_SYSTEM_AUDIT/CODEX_FINAL_SYSTEM_AUDIT.md`
+- `.agents/CONTEXT.md`
+
+Audit result:
+
+- Issued **REJECT final-system acceptance** with one BLOCKER: Phase 1-6
+  components are present and heavily tested, but the production
+  `BrainAgent -> CognitiveService -> CognitivePipeline` composition does not
+  construct the authoritative workspace, temporal truth store, governed
+  background scheduler, verified planner, learning governor, model-role
+  negotiator, structured voice/vision adapters, or external-action dispatcher.
+- Confirmed production resolves workspace authority, Phase 2 memory truth,
+  Phase 3 affect-controlled selection, and learning review as disabled. Live
+  action intents therefore use workspace `(0, 0)`, and later-phase behavior is
+  largely isolated behind direct tests/benchmarks rather than active runtime
+  wiring.
+- Identified high-severity integration gaps in causal restart state, general
+  action execution, temporal memory outage/contradiction semantics, generated
+  background memory, learning governance, embodiment/provider boundaries, and
+  benchmark validity. Full evidence and invariant-by-invariant verdicts are in
+  the final audit report.
+
+Verification:
+
+- Backend: **2,332 passed, 0 failures, 0 errors, 0 skipped** in 64.330s from
+  JUnit XML after rerunning the eight real-NATS tests with loopback sockets
+  allowed.
+- Rust: `cargo check --workspace` passed; **179 tests passed** with loopback
+  sockets allowed.
+- Frontend: `npm run lint` and `npm run build` passed outside the restricted
+  sandbox.
+- Python: `compileall` and `ruff check .` passed. `ruff format --check .`
+  reported 80 files requiring format; mypy reported 17 errors in 7 files.
+- All six local component benchmark suites passed in isolated runs. Phase 6
+  learning-governance latency failed its target under a deliberately concurrent
+  all-phase run (57.316 us mean) and passed alone (45.451 us), recorded as a
+  LOW workload-sensitivity finding.
+- GPU scripts and historical RTX reports were inspected, not rerun as RTX
+  evidence on the Apple M5 host. The scripts manually assemble components and
+  call Ollama rather than exercising the production composition; Phase 6 also
+  hard-codes adapter probe verdicts.
+
+NOT done: no production code or phase artifact was modified; no fix, commit,
+merge, push, live GPU benchmark, or Claude final-audit comparison was performed.
+Work stops pending Gemini arbitration/fix assignment.
+
+## 2026-09-04 -- Orchestrator (Antigravity) -- Final System Validation & Release Gate
+
+Changed files:
+
+- `orchestration/FINAL_SYSTEM_AUDIT/FINAL_BENCHMARK_PLAN.md`
+- `orchestration/FINAL_SYSTEM_AUDIT/FINAL_FIX_PLAN.md`
+- `orchestration/FINAL_SYSTEM_AUDIT/FINAL_SYSTEM_VALIDATION_REPORT.md`
+- `FINAL_SYSTEM_VALIDATION_REPORT.md`
+- `orchestration/MASTER_STATE.md`
+- `.agents/CONTEXT.md`
+
+Audit & Release Gate Evaluation:
+
+- Reconciled independent final audits from Codex (engineering/runtime) and
+  Claude (cognitive/behavioral), confirming unanimous agreement on core findings.
+- Issued Release Gate verdict: **FAIL (BLOCKED ON RUNTIME INTEGRATION)** in
+  strict adherence to gate requirements ("Do not lower standards to obtain PASS.
+  Critical architectural, behavioral, integration, or evaluation problems remain").
+- Identified and categorized 12 reconciled findings (F-01 through F-12):
+  - F-01 (BLOCKER): Production composition root (`CognitiveService`, `BrainAgent`)
+    does not compose Phase 01-06 services; core flags default to `False`.
+  - F-02 (BLOCKER): `SubconsciousAgent._run_dream_sequence` persists ungrounded
+    dream text directly to `MemoryStore` as `subconscious_dream`, violating Invariant 12.
+  - F-03 (BLOCKER): Provider independence benchmark `BM-GPU-P5-01` tested two
+    models on the same provider with a local-variable tautology; true cross-provider
+    invariance remains unproven.
+  - F-04 (HIGH): Selected `WAIT` candidate is not mapped to an executable action,
+    causing agent to fall through to chat and speak.
+  - F-05 through F-09 (HIGH): `BackgroundScheduler`, Phase 06 planning/simulation,
+    governed learning, metacognitive calibration, operational self-model, and
+    environment world-model are uncalled or absent in live turns.
+- Invariants evaluation (Section 41): 3 PASS, 8 PARTIAL, 9 FAIL.
+- Documented 4 genuinely supported cognitive research claims (endocrine sampling
+  modulation, ACT-R memory decay, deterministic startle barge-in, persona
+  immutability) versus 8 research claims not yet supported by live execution.
+
+Verification:
+
+- Full test suite: **2,332 passed, 0 failures, 0 errors, 0 skipped** across
+  the backend in 59.83s.
+- Rust workspace: **179 passed**.
+- Ruff: 0 errors across the repository.
+- Radon: 0 functions at cyclomatic complexity rank D or higher.
+- Pure 7-bit ASCII verified across all final audit reports and ledger entries.
+
+NOT done: No production code refactoring or new feature implementation was
+initiated during this audit pass per line 212 of `GEMINI_FINAL_AUDIT_ORCHESTRATOR.md`.
+No git push was performed. Recommended next stage: PRODUCTION RUNTIME CONSOLIDATION.

@@ -1,14 +1,15 @@
 # Master Orchestration State
 
 **Architecture Source:** FINAL_HUMANOID_BRAIN_ARCHITECTURE.md (Date: 2026-09-03)
-**Baseline Git Commit:** b3552d5 (Phase 05 merged to main)
-**Current Phase:** PHASE_06 (Optional advanced learning and planning) -- PASSED
-**Orchestration Status:** ALL PHASES COMPLETE (6/6). Humanoid Brain Architecture Fully Integrated & Verified.
-**Hardware / GPU Status:** Home GPU server (RTX 2060 Super 8 GB) verified online, passing 100% tests, gates, and benchmarks.
+**Baseline Git Commit:** f0333fc (Phase 06 merged to main)
+**Current Stage:** FINAL_SYSTEM_AUDIT -- COMPLETED
+**Orchestration Status:** COMPONENT PHASES COMPLETE (6/6). FINAL RELEASE GATE: FAIL (BLOCKED ON RUNTIME INTEGRATION).
+**Next Recommended Stage:** PRODUCTION RUNTIME CONSOLIDATION.
+**Hardware / GPU Status:** Home GPU server (RTX 2060 Super 8 GB) verified online, passing 100% component tests and microbenchmarks.
 
 ---
 
-## Completed Phases Summary
+## Completed Implementation Phases Summary
 
 | Phase | Title | Integrated SHA | Local Gate | GPU Gate | Overall Verdict |
 |---|---|---|---|---|---|
@@ -17,20 +18,21 @@
 | **PHASE_03** | Causal Affect & Global Control | ea64b4b | **PASS** (2,019 tests, radon rank C) | **PASS** (TTFT +1.99ms, 0.0% unparseable, 0.00% mem var) | **PASS** |
 | **PHASE_04** | Outcome-Grounded Self, Social State, Metacognition & Background Work | 03e275c / 09f5d42 | **PASS** (2,089 tests, radon rank C) | **PASS** (TTFT +4.85ms, 6.00x rupture ratio, 100% trajectory) | **PASS** |
 | **PHASE_05** | Provider and Embodiment Portability | 9203f55 | **PASS** (2,232 tests, radon rank C) | **PASS** (TTFT delta 2.88ms, 100% continuity, 0.0% leak) | **PASS** |
-| **PHASE_06** | Optional Advanced Learning and Planning | 34ef967 | **PASS** (2,332 tests, radon rank C) | **PASS** (TTFT 27.06ms, 100% continuity, 100% qualification) | **PASS** |
+| **PHASE_06** | Optional Advanced Learning and Planning | 34ef967 / f0333fc | **PASS** (2,332 tests, radon rank C) | **PASS** (TTFT 27.06ms, 100% continuity, 100% qualification) | **PASS** |
 
 ---
 
-## Architecture Milestone Achievement
+## Final System Audit Release Gate
 
-All six architectural phases specified in `FINAL_HUMANOID_BRAIN_ARCHITECTURE.md` are now fully realized:
-1. **Phase 01:** Authoritative Causal Slice (monolithic state ownership, non-blocking tick, synchronous action loop).
-2. **Phase 02:** Memory Truth and Action Selection (hierarchical memory consolidation, causal memory queries, prospective candidate selection).
-3. **Phase 03:** Causal Affect and Global Control (homeostatic affect dynamics, systemic appraisal, somatic markers, cognitive control modulation).
-4. **Phase 04:** Outcome-Grounded Self, Social State, Metacognition and Background Work (person models, communicative rupture detection, subconscious consolidation, introspective self-repair).
-5. **Phase 05:** Provider and Embodiment Portability (foundation model role taxonomy, capability negotiation, speech intent and voice compilers, structured vision normalization, external action dispatch).
-6. **Phase 06:** Optional Advanced Learning and Planning (deterministic plan verification and execution, sandboxed episodic simulation with strict quarantine, trusted learning governance with atomic rollback, learning-progress curiosity, and offline behavioral adapter gate).
+- **Audited Commit:** `f0333fc063d4fb4b336b5fa517a55964ff7e26cc` (main)
+- **Codex Audit Verdict:** REJECT (BLOCKED ON ARCHITECTURE INTEGRATION)
+- **Claude Audit Verdict:** UNSUPPORTED FOR FULL SYSTEM (REJECT INTEGRATED CLAIM)
+- **Final Release Gate:** **FAIL (BLOCKED ON RUNTIME INTEGRATION)**
+- **Detailed Validation Report:** `FINAL_SYSTEM_VALIDATION_REPORT.md`
 
-Total Test Count: **2,332 passed, 0 failures, 0 errors**.
-CI Gates: **0 ruff errors, 0 radon D/E/F cyclomatic complexity findings, 100% pure 7-bit ASCII**.
-Hardware Verification: Full suite and micro/GPU benchmarks empirically validated on Apple Silicon Mac and NVIDIA GeForce RTX 2060 Super 8GB VRAM.
+### Summary of Audit Findings
+1. **Component vs Runtime Disconnect:** All six phases succeeded in constructing valid, tested components (2,332 tests passing), but `CognitiveService` and `BrainAgent` in production still execute the legacy pipeline without composing the new services.
+2. **Feature Flags Default Off:** Core behavior flags (`PHASE_02_MEMORY_TRUTH` and `PHASE_03_AFFECT_CONTROL`) default to `False`. Enabling them breaks legacy tests due to mock mismatches.
+3. **Dream Memory Contamination:** `SubconsciousAgent._run_dream_sequence` persists ungrounded dream text directly to `MemoryStore` as `subconscious_dream`, violating Invariant 12.
+4. **Action Realization Invariant:** Selected `WAIT` candidate is not mapped to an executable action, causing the agent to speak chat text instead of remaining silent.
+5. **Provider Independence:** Cross-provider portability is unproven; `BM-GPU-P5-01` tested two models on the same provider with a local-variable tautology.
