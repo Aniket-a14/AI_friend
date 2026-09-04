@@ -7,6 +7,7 @@ translation inspectable before a renderer is allowed to synthesize audio.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any, Protocol, runtime_checkable
 
@@ -31,6 +32,8 @@ class VoiceCapability(BaseModel):
     supports_timeline_emphasis: bool
     supports_affect_modulation: bool
     supports_ssml: bool
+    supports_epistemic_modulation: bool = False
+    supports_relationship_modulation: bool = False
     supported_styles: list[str] = Field(default_factory=list)
 
 
@@ -97,6 +100,51 @@ def _markers_of_kind(
     return [marker for marker in intent.timeline if marker.kind == kind]
 
 
+def _unrenderable_social_dimensions(
+    intent: SpeechIntent,
+    capabilities: VoiceCapability,
+) -> list[str]:
+    """Return non-default intent dimensions that this compiler cannot render."""
+    dropped: list[str] = []
+    if not capabilities.supports_epistemic_modulation:
+        if intent.epistemics.confidence != 1.0:
+            dropped.append("epistemics.confidence")
+        if intent.epistemics.uncertainty != 0.0:
+            dropped.append("epistemics.uncertainty")
+        if intent.epistemics.hedge_required:
+            dropped.append("epistemics.hedge_required")
+    if not capabilities.supports_relationship_modulation:
+        if intent.relationship.stance != "WARM":
+            dropped.append("relationship.stance")
+        if intent.relationship.familiarity != 0.5:
+            dropped.append("relationship.familiarity")
+        if intent.relationship.register != "CASUAL":
+            dropped.append("relationship.register")
+    return dropped
+
+
+def _unrenderable_affect_dimensions(
+    intent: SpeechIntent,
+    capabilities: VoiceCapability,
+) -> list[str]:
+    """Return intentional affect modulation a compiler cannot represent."""
+    if capabilities.supports_affect_modulation:
+        return []
+
+    dropped: list[str] = []
+    if intent.affect.valence != 0.0:
+        dropped.append("affect.valence")
+    if intent.affect.arousal != 0.0:
+        dropped.append("affect.arousal")
+    if intent.affect.dominance != 0.0:
+        dropped.append("affect.dominance")
+    if intent.affect.intensity != 0.5:
+        dropped.append("affect.intensity")
+    if intent.affect.optional_label_hint:
+        dropped.append("affect.optional_label_hint")
+    return dropped
+
+
 class ElevenLabsVoiceCompiler:
     """Cloud-oriented compiler for style, affect, rate, and pause controls."""
 
@@ -113,7 +161,7 @@ class ElevenLabsVoiceCompiler:
 
     def compile(self, intent: SpeechIntent) -> tuple[CompiledVoicePayload, IntentLossRecord]:
         """Produce cloud controls without leaking provider markup into cognition."""
-        dropped: list[str] = []
+        dropped = _unrenderable_social_dimensions(intent, self.capabilities)
         substituted: dict[str, Any] = {}
         style = intent.delivery.style
         if style and style not in self.capabilities.supported_styles:
@@ -161,11 +209,10 @@ class GPTSoVITSVoiceCompiler:
 
     def compile(self, intent: SpeechIntent) -> tuple[CompiledVoicePayload, IntentLossRecord]:
         """Emit local SSML tags and disclose cloud-only style loss."""
-        dropped: list[str] = []
+        dropped = _unrenderable_social_dimensions(intent, self.capabilities)
         if intent.delivery.style:
             dropped.append("delivery.style")
-        if intent.affect.optional_label_hint:
-            dropped.append("affect.optional_label_hint")
+        dropped.extend(_unrenderable_affect_dimensions(intent, self.capabilities))
 
         tags = _gpt_sovits_tags(intent)
         payload = CompiledVoicePayload(
@@ -185,10 +232,27 @@ class GPTSoVITSVoiceCompiler:
 
 def _gpt_sovits_tags(intent: SpeechIntent) -> str:
     """Render only adapter-owned tags; the original semantic text stays intact."""
-    speech = intent.semantic_text
+    replacements: list[tuple[int, int, str]] = []
     for marker in _markers_of_kind(intent, TimelineMarkerKind.EMPHASIS):
-        emphasized = f'<emphasis level="{marker.strength_or_duration}">{marker.text_span}</emphasis>'
-        speech = speech.replace(marker.text_span, emphasized, 1)
+        if not marker.text_span:
+            continue
+        start = 0
+        while True:
+            start = intent.semantic_text.find(marker.text_span, start)
+            if start < 0:
+                break
+            end = start + len(marker.text_span)
+            if all(end <= used_start or start >= used_end for used_start, used_end, _ in replacements):
+                emphasized = (
+                    f'<emphasis level="{marker.strength_or_duration}">'
+                    f"{marker.text_span}</emphasis>"
+                )
+                replacements.append((start, end, emphasized))
+                break
+            start += 1
+    speech = intent.semantic_text
+    for start, end, emphasized in sorted(replacements, reverse=True):
+        speech = f"{speech[:start]}{emphasized}{speech[end:]}"
     pauses = "".join(
         f'<break time="{marker.strength_or_duration}s"/>'
         for marker in _markers_of_kind(intent, TimelineMarkerKind.PAUSE)
@@ -208,6 +272,28 @@ def _legacy_trajectory(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [frame for frame in raw_trajectory if isinstance(frame, Mapping)]
 
 
+def _legacy_relative_energy(frames: list[Mapping[str, Any]]) -> float:
+    """Use post-fade-in frames so legacy migration does not violate schema bounds."""
+    steady_frames: list[Mapping[str, Any]] = []
+    for frame in frames:
+        try:
+            time_offset_ms = float(frame.get("time_offset_ms", 0.0))
+        except (TypeError, ValueError):
+            continue
+        if time_offset_ms >= 150.0:
+            steady_frames.append(frame)
+    volumes: list[float] = []
+    for frame in steady_frames or frames:
+        try:
+            volume = float(frame.get("volume", 1.0))
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(volume):
+            volumes.append(volume)
+    energy = sum(volumes) / len(volumes) if volumes else 1.0
+    return min(2.0, max(0.5, energy))
+
+
 def legacy_expression_to_speech_intent(data: dict[str, Any]) -> SpeechIntent:
     """Adapt an ``AgentVoiceModulation``-shaped payload into ``SpeechIntent``.
 
@@ -225,7 +311,7 @@ def legacy_expression_to_speech_intent(data: dict[str, Any]) -> SpeechIntent:
     delivery = SpeechDelivery(
         relative_rate=float(first_frame.get("rate", 1.0)),
         relative_pitch=float(first_frame.get("pitch", 1.0)),
-        relative_energy=float(first_frame.get("volume", 1.0)),
+        relative_energy=_legacy_relative_energy(frames),
         style=style if isinstance(style, str) else None,
     )
     return build_speech_intent(

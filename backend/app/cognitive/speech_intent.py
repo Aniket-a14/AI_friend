@@ -8,6 +8,7 @@ provider controls, but they must not change this source-of-truth record.
 from __future__ import annotations
 
 import uuid
+import warnings
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -31,12 +32,24 @@ class SpeechEpistemics(BaseModel):
     hedge_required: bool = False
 
 
-class SpeechRelationship(BaseModel):
-    """Relationship-aware stance and register selected by cognition."""
+# ``register`` is part of the versioned wire contract, although it shadows a
+# BaseModel method and Pydantic warns when it constructs this schema.
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r'Field name "register" in "SpeechRelationship" shadows an '
+            r'attribute in parent "BaseModel"'
+        ),
+        category=UserWarning,
+    )
 
-    stance: str = "WARM"
-    familiarity: float = Field(default=0.5, ge=0.0, le=1.0)
-    register: str = "CASUAL"
+    class SpeechRelationship(BaseModel):
+        """Relationship-aware stance and register selected by cognition."""
+
+        stance: str = "WARM"
+        familiarity: float = Field(default=0.5, ge=0.0, le=1.0)
+        register: str = "CASUAL"
 
 
 class SpeechDelivery(BaseModel):

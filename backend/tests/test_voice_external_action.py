@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
+import cognitive_rust
 import pytest
 from pydantic import ValidationError
 
@@ -17,6 +19,8 @@ from app.cognitive.external_action import (
 from app.cognitive.speech_intent import (
     SpeechAffect,
     SpeechDelivery,
+    SpeechEpistemics,
+    SpeechRelationship,
     SpeechTimelineMarker,
     TimelineMarkerKind,
     build_speech_intent,
@@ -137,6 +141,70 @@ def test_gpt_sovits_uses_local_pitch_rate_and_ssml_but_logs_cloud_style_loss():
     assert loss.dropped_dimensions == ["delivery.style", "affect.optional_label_hint"]
 
 
+def test_compilers_report_unrenderable_social_and_affect_dimensions():
+    """Loss telemetry must expose intent cues that a provider cannot synthesize."""
+    intent = build_speech_intent(
+        turn_id="turn-loss",
+        semantic_text="I may be mistaken.",
+        affect=SpeechAffect(valence=-0.4, arousal=0.5, dominance=-0.2, intensity=0.8),
+        epistemics=SpeechEpistemics(confidence=0.6, uncertainty=0.4, hedge_required=True),
+        relationship=SpeechRelationship(stance="CAUTIOUS", familiarity=0.8, register="FORMAL"),
+    )
+    social_dimensions = {
+        "epistemics.confidence",
+        "epistemics.uncertainty",
+        "epistemics.hedge_required",
+        "relationship.stance",
+        "relationship.familiarity",
+        "relationship.register",
+    }
+
+    _, elevenlabs_loss = ElevenLabsVoiceCompiler().compile(intent)
+    _, gpt_sovits_loss = GPTSoVITSVoiceCompiler().compile(intent)
+
+    assert social_dimensions <= set(elevenlabs_loss.dropped_dimensions)
+    assert social_dimensions <= set(gpt_sovits_loss.dropped_dimensions)
+    assert {
+        "affect.valence",
+        "affect.arousal",
+        "affect.dominance",
+        "affect.intensity",
+    } <= set(gpt_sovits_loss.dropped_dimensions)
+    assert elevenlabs_loss.fidelity_score < 1.0
+    assert gpt_sovits_loss.fidelity_score < elevenlabs_loss.fidelity_score
+
+
+def test_gpt_sovits_emphasis_tags_do_not_nest_for_duplicate_or_overlapping_markers():
+    """Repeated spans must not replace text inside a tag emitted by an earlier marker."""
+    intent = build_speech_intent(
+        turn_id="turn-emphasis",
+        semantic_text="Please wait, then please wait.",
+        timeline=[
+            SpeechTimelineMarker(
+                kind=TimelineMarkerKind.EMPHASIS,
+                text_span="Please wait",
+                strength_or_duration=0.8,
+            ),
+            SpeechTimelineMarker(
+                kind=TimelineMarkerKind.EMPHASIS,
+                text_span="wait",
+                strength_or_duration=0.6,
+            ),
+            SpeechTimelineMarker(
+                kind=TimelineMarkerKind.EMPHASIS,
+                text_span="Please wait",
+                strength_or_duration=0.8,
+            ),
+        ],
+    )
+
+    payload, _ = GPTSoVITSVoiceCompiler().compile(intent)
+
+    assert (payload.ssml_or_tags or "").count("<emphasis") == 2
+    assert "<emphasis level=\"0.8\">Please wait</emphasis>" in (payload.ssml_or_tags or "")
+    assert "<emphasis level=\"0.6\"><emphasis" not in (payload.ssml_or_tags or "")
+
+
 def test_legacy_modulation_migrates_bidirectionally_without_losing_prosody():
     """Legacy AgentVoiceModulation frames map into and back out of SpeechIntent."""
     legacy = {
@@ -159,6 +227,25 @@ def test_legacy_modulation_migrates_bidirectionally_without_losing_prosody():
     assert intent.delivery.relative_pitch == 0.9
     assert modulation.trajectory[0].volume == 1.1
     assert restored["affect_label"] == "calm"
+
+
+def test_legacy_migration_uses_real_apra_steady_state_volume():
+    """Rust trajectories fade in at 0.10, which is invalid SpeechDelivery energy."""
+    trajectory = cognitive_rust.generate_apra_trajectory(0.2, 0.4, 0.5, 0.1, 0.1, 0.1, 0.1)
+    legacy = {
+        "turn_id": "turn-apra",
+        "semantic_text": "Trajectory words.",
+        "trajectory": [
+            {"time_offset_ms": t_ms, "rate": rate, "pitch": pitch, "volume": volume}
+            for t_ms, rate, pitch, volume in trajectory
+        ],
+    }
+
+    intent = legacy_expression_to_speech_intent(legacy)
+
+    assert trajectory[0][3] == 0.1
+    assert 0.5 <= intent.delivery.relative_energy <= 2.0
+    assert intent.delivery.relative_energy != trajectory[0][3]
 
 
 @pytest.mark.parametrize(
@@ -214,6 +301,82 @@ def test_external_action_authorization_allows_registered_executor_and_terminal_o
     assert outcome.turn_id == "turn-action"
     assert outcome.status == "COMPLETED"
     assert outcome.elapsed_ms == 12.5
+
+
+def test_external_action_low_reversible_request_needs_no_authorization():
+    """Low-risk reversible actions must retain the safe simulation escape hatch."""
+    dispatcher = ExternalActionDispatcher()
+    intent = ExternalActionIntent(
+        action_id="act-low",
+        turn_id="turn-action",
+        tool_or_actuator="lamp.dim",
+    )
+
+    result = dispatcher.dispatch(intent)
+
+    assert result["status"] == "COMPLETED"
+    assert result["simulated"] is True
+
+
+def test_external_action_simulation_is_explicit_in_terminal_outcome():
+    """Unregistered adapters must never look like a real successful action."""
+    dispatcher = ExternalActionDispatcher()
+    intent = ExternalActionIntent(
+        action_id="act-simulated",
+        turn_id="turn-action",
+        tool_or_actuator="music.play",
+    )
+
+    result = dispatcher.dispatch(intent)
+    outcome = dispatcher.create_action_outcome(intent, result, elapsed_ms=1.0)
+
+    assert result["simulated"] is True
+    assert result["status"] == "COMPLETED"
+    assert result["message"] == "simulated: no adapter registered for music.play"
+    assert outcome.actual_delivered_text == result["message"]
+
+
+def test_external_action_executor_exception_becomes_failed_result():
+    """Adapter failures must be terminal results instead of escaping cognition."""
+    def broken_executor(_: ExternalActionIntent) -> dict[str, object]:
+        raise RuntimeError("adapter unavailable")
+
+    dispatcher = ExternalActionDispatcher({"lamp.dim": broken_executor})
+    intent = ExternalActionIntent(
+        action_id="act-broken",
+        turn_id="turn-action",
+        tool_or_actuator="lamp.dim",
+    )
+
+    result = dispatcher.dispatch(intent)
+
+    assert result["status"] == "FAILED"
+    assert result["executed"] is False
+    assert result["error"] == "adapter unavailable"
+
+
+def test_external_action_timeout_becomes_failed_result():
+    """An adapter that exceeds timeout_s must fail before it can block a turn."""
+    def slow_executor(_: ExternalActionIntent) -> dict[str, object]:
+        time.sleep(0.1)
+        return {"status": "COMPLETED"}
+
+    dispatcher = ExternalActionDispatcher({"lamp.dim": slow_executor})
+    intent = ExternalActionIntent(
+        action_id="act-timeout",
+        turn_id="turn-action",
+        tool_or_actuator="lamp.dim",
+        timeout_s=0.01,
+    )
+
+    result = dispatcher.dispatch(intent)
+
+    assert result == {
+        "action_id": "act-timeout",
+        "executed": False,
+        "status": "FAILED",
+        "error": "Action timed out after 0.01s",
+    }
 
 
 def test_phase_package_files_are_strict_7_bit_ascii():

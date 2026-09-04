@@ -16367,3 +16367,44 @@ Verification:
 **NOT done:** No live provider, actuator, or NATS wiring was added. These
 adapters remain intentionally in-process contracts until integration owns the
 runtime dispatch and playback-feedback boundaries.
+
+### 2026-09-04 -- Codex Phase 05 Package A peer-review fix round
+
+Changed files:
+
+- `backend/app/cognitive/speech_intent.py`
+- `backend/app/voice/compiler.py`
+- `backend/app/cognitive/external_action.py`
+- `backend/tests/test_voice_external_action.py`
+- `orchestration/PHASE_05/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Legacy APRA migration no longer reads the 0.10 fade-in frame as delivery
+  energy. It averages frames at or after 150 ms and clamps the result to the
+  stable `SpeechDelivery` range.
+- ElevenLabs and GPT-SoVITS now disclose non-default epistemic and relationship
+  cues they cannot render. GPT-SoVITS also records non-neutral affect that its
+  declared capability cannot modulate.
+- GPT-SoVITS replaces only non-overlapping emphasis source spans, preventing
+  duplicate or overlapping markers from nesting generated tags.
+- Simulated actions now state that no adapter was registered and propagate that
+  text to `OutcomeRecord.actual_delivered_text`. Registered executors fail at
+  `timeout_s` rather than blocking a cognitive turn.
+- The versioned `SpeechRelationship.register` field remains intact while its
+  known Pydantic field-shadow warning is narrowly suppressed at construction.
+
+Verification:
+
+- Focused voice/external-action suite: 20 passed, 0 failures, 0 errors in
+  JUnit XML.
+- Ruff and Radon rank-D gates passed. ASCII byte scans and `git diff --check`
+  passed.
+- Mutation checks confirmed the APRA migration, simulated-result message, and
+  timeout regressions fail when their corresponding implementation is removed.
+
+**NOT done:** No full backend suite, remote CI, provider synthesis, actuator,
+or NATS integration was run in this peer-review fix round. Python threads
+cannot be force-stopped, so future actuator adapters should support cooperative
+cancellation after dispatcher timeout.

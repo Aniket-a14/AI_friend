@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 import uuid
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from enum import Enum
 from typing import Any
 
@@ -89,9 +91,20 @@ class ExternalActionDispatcher:
                 "simulated": True,
                 "status": "COMPLETED",
                 "tool_or_actuator": intent.tool_or_actuator,
+                "message": f"simulated: no adapter registered for {intent.tool_or_actuator}",
             }
+        executor_pool = ThreadPoolExecutor(max_workers=1)
+        future = executor_pool.submit(executor, intent)
         try:
-            result = dict(executor(intent))
+            result = dict(future.result(timeout=intent.timeout_s))
+        except FuturesTimeoutError:
+            future.cancel()
+            return {
+                "action_id": intent.action_id,
+                "executed": False,
+                "status": "FAILED",
+                "error": f"Action timed out after {intent.timeout_s}s",
+            }
         except Exception as exc:
             return {
                 "action_id": intent.action_id,
@@ -99,6 +112,8 @@ class ExternalActionDispatcher:
                 "status": "FAILED",
                 "error": str(exc),
             }
+        finally:
+            executor_pool.shutdown(wait=False, cancel_futures=True)
         result.setdefault("action_id", intent.action_id)
         result.setdefault("executed", True)
         result.setdefault("status", "COMPLETED")
