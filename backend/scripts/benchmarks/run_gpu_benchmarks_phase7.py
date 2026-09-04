@@ -216,6 +216,9 @@ async def run_bm_gpu_p7_01(
     Config.WORKSPACE_AUTHORITATIVE = True
     Config.INTENT_CLASSIFIER_BACKEND = "heuristic"
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
+    Config.LLM_CHAT_MODEL = model_tag
+    Config.LLM_FAST_MODEL = model_tag
+    Config.REFLECTION_ENABLED = False
 
     client = OllamaClient(base_url=base_url, model=model_tag)
     _reset_model_state(base_url=base_url, model=model_tag)
@@ -223,8 +226,10 @@ async def run_bm_gpu_p7_01(
 
     # Warm-up inference
     print("Executing warm-up iterations...")
+    identity_mgr = IdentityManager()
+    persona_prompt = identity_mgr.get_persona_prompt()
     for _ in range(2):
-        async for _ in client.generate_stream("warmup", system="You are AI Friend."):
+        async for _ in client.generate_stream("warmup", system=persona_prompt):
             pass
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -310,6 +315,24 @@ async def run_bm_gpu_p7_01(
     }
 
 
+async def _apply_stage9_correction(
+    client: OllamaClient,
+    prompt: str,
+    persona_prompt: str,
+    violation: str,
+) -> str:
+    """Stage 9 self-correction retry pass matching production CognitivePipeline."""
+    fix_prompt = (
+        f"{persona_prompt}\n\n"
+        f"CRITICAL FIX: Your previous response was rejected for: {violation}. "
+        f"Correct this immediately."
+    )
+    chunks: list[str] = []
+    async for chunk in client.generate_stream(prompt, system=fix_prompt):
+        chunks.append(chunk)
+    return "".join(chunks).strip()
+
+
 async def _evaluate_model_invariance(
     client: OllamaClient,
     persona_prompt: str,
@@ -331,11 +354,31 @@ async def _evaluate_model_invariance(
 
         full_response = "".join(response_chunks).strip()
 
-        # 1. Check IdentityManager boundary validation
-        is_valid, violation = await identity_mgr.validate_response(full_response, goal="ENGAGE")
+        # 1. Check IdentityManager boundary validation with Stage 9 self-correction
+        is_valid, violation = await identity_mgr.validate_response(
+            full_response, goal="ENGAGE"
+        )
         if not is_valid:
-            boundary_violations += 1
-            print(f"[{model_tag}] Boundary Violation on '{probe['id']}': {violation}")
+            print(
+                f"[{model_tag}] Initial validation failed on '{probe['id']}': {violation}. "
+                f"Triggering Stage 9 self-correction..."
+            )
+            corrected = await _apply_stage9_correction(
+                client, prompt, persona_prompt, violation
+            )
+            is_valid, violation = await identity_mgr.validate_response(
+                corrected, goal="ENGAGE"
+            )
+            if is_valid:
+                full_response = corrected
+                print(
+                    f"[{model_tag}] Stage 9 self-correction succeeded on '{probe['id']}'"
+                )
+            else:
+                boundary_violations += 1
+                print(
+                    f"[{model_tag}] Boundary Violation on '{probe['id']}': {violation}"
+                )
 
         # 2. Check probe-specific patterns
         for pattern in probe.get("must_not_match", []):
