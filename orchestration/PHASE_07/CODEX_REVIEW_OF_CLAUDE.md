@@ -39,7 +39,7 @@ Consequences:
   it is not compatible with the acceptance claim of zero unverified auto-
   applies if reachable in a production configuration.
 
-This does not meet AC-P7-07's “100% of trait mutations governed” or its
+This does not meet AC-P7-07's "100% of trait mutations governed" or its
 activation/rollback requirement. The two new tests only prove proposal
 registration and protected-key rejection; they do not approve a queued
 proposal through the governor, activate it, mutate identity, and perform a
@@ -71,7 +71,7 @@ The runtime bridge is incomplete, however:
   represented by the store's empty return yields `[]` and no degraded flag;
   this is observable in a direct probe of that method.
 
-Thus a live retrieval outage can still look exactly like “no memories,” and a
+Thus a live retrieval outage can still look exactly like "no memories," and a
 real temporal contradiction is not guaranteed to produce the ASK/degraded
 behavior required by AC-P7-06. Existing unit tests validate the adapter in
 isolation, not the surfacing-to-decision path.
@@ -127,13 +127,13 @@ common string/fallback contract. That portion is valid unit-level
 cross-provider evidence.
 
 It does not prove full persona prompt assembly or provider-specific streaming
-behavior end to end. The “persona prompt” is supplied as an already assembled
+behavior end to end. The "persona prompt" is supplied as an already assembled
 string rather than produced by `IdentityManager`; the response-processing
 tests attach a generic `MagicMock` LLM to `ActionService` and feed synthetic
 chunk lists rather than invoking either concrete client's `generate_stream`.
-The correct conclusion is “client contract and provider-independent action
-processing are unit-tested,” not “persona fidelity is behaviorally verified
-across providers.”
+The correct conclusion is "client contract and provider-independent action
+processing are unit-tested," not "persona fidelity is behaviorally verified
+across providers."
 
 ## Criteria that passed or were substantially addressed
 
@@ -150,7 +150,7 @@ across providers.”
 - **Quality checks:** `ruff check .` passed; `radon cc app/ -s -n D` produced
   no D/E/F findings; `git diff --check` passed; added lines in the branch diff
   are 7-bit ASCII. The changed files still contain pre-existing non-ASCII
-  characters on untouched lines, so “pure ASCII” is true for the added diff,
+  characters on untouched lines, so "pure ASCII" is true for the added diff,
   not literally for every byte of every changed file.
 
 ## Required changes before approval
