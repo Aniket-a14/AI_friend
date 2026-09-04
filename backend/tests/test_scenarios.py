@@ -59,6 +59,14 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
 
     original_val = Config.LLM_INTENT_CLASSIFICATION_ENABLED
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
+    # Phase 07: LEARNING_REVIEW_REQUIRED now defaults True, which routes a
+    # high-confidence persona suggestion into the governed review queue
+    # instead of applying it directly -- this scenario is specifically
+    # about the legacy direct-apply drift actually landing in
+    # identity.history, so it pins the flag back to False for its duration
+    # (mirrors test_reflection.py::test_identity_evolution_trigger).
+    original_review_required = Config.LEARNING_REVIEW_REQUIRED
+    Config.LEARNING_REVIEW_REQUIRED = False
 
     async def mock_generate(prompt, **kwargs):
         if "deep appraisal" in prompt or "goal_congruence" in prompt:
@@ -97,6 +105,7 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
 
     # Cleanup
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_val
+    Config.LEARNING_REVIEW_REQUIRED = original_review_required
 
 
 @pytest.mark.asyncio

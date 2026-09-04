@@ -19,7 +19,16 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 RecordType = Literal["experience", "belief", "procedure"]
-ContradictionState = Literal["NONE", "DISPUTED", "SUPERSEDED", "INVALIDATED"]
+ContradictionState = Literal[
+    "NONE",
+    "DISPUTED",
+    "SUPERSEDED",
+    "INVALIDATED",
+    "CONFLICT",
+    "UPDATE",
+    "CORRECTION",
+    "ELABORATION",
+]
 
 
 class MemoryActivation(BaseModel):
@@ -148,6 +157,56 @@ class AntiInjectionGate:
         return text
 
 
+_VALID_CONTRADICTION_STATES: frozenset[str] = frozenset(ContradictionState.__args__)
+
+
+def _extract_contradiction_state(memory: dict[str, Any]) -> ContradictionState:
+    """A memory dict's own `contradiction_state` wins outright when present
+    and recognized. Failing that, a linked `BeliefRecord` (memory_records.py
+    -- either the object itself under `belief_record`/`belief`, or an
+    already-dict-shaped copy) contributes its `status`
+    (ACTIVE/SUPERSEDED/INVALIDATED/DISPUTED) or, for a temporal-store
+    contradiction decision, its `contradiction_type`
+    (CONFLICT/UPDATE/CORRECTION/ELABORATION). Anything unrecognized falls
+    back to "NONE" -- this adapter must never invent a dispute the source
+    data did not actually assert.
+    """
+    explicit = memory.get("contradiction_state")
+    if isinstance(explicit, str) and explicit in _VALID_CONTRADICTION_STATES:
+        return explicit  # type: ignore[return-value]
+
+    belief = memory.get("belief_record") or memory.get("belief")
+    if belief is not None:
+        contradiction_type = getattr(belief, "contradiction_type", None)
+        if contradiction_type is None and isinstance(belief, dict):
+            contradiction_type = belief.get("contradiction_type")
+        if (
+            isinstance(contradiction_type, str)
+            and contradiction_type in _VALID_CONTRADICTION_STATES
+        ):
+            return contradiction_type  # type: ignore[return-value]
+
+        status = getattr(belief, "status", None)
+        if status is None and isinstance(belief, dict):
+            status = belief.get("status")
+        if isinstance(status, str) and status in _VALID_CONTRADICTION_STATES:
+            return status  # type: ignore[return-value]
+        if status == "ACTIVE":
+            return "NONE"
+
+    return "NONE"
+
+
+def _extract_outage_flag(memory: dict[str, Any]) -> bool:
+    """True when the memory dict itself was stamped with a retrieval
+    failure -- either an explicit `outage_flag`, or an `error`/
+    `retrieval_error` key a degraded surfacing path attaches (mirroring
+    `MemoryStore.last_search_error` on the retrieval side)."""
+    if memory.get("outage_flag"):
+        return True
+    return bool(memory.get("error") or memory.get("retrieval_error"))
+
+
 def memories_to_activations(
     surfaced_memories: list[dict[str, Any]] | None,
 ) -> list[MemoryActivation]:
@@ -163,14 +222,14 @@ def memories_to_activations(
     `memory_activations` parameter, so the ASK/outage branches were only
     reachable from a hand-built test argument.
 
-    Deliberately conservative: every adapted token gets `record_type=
-    "experience"` (the closest fit for an untyped retrieved snippet) and
-    `contradiction_state="NONE"` (the default) -- a legacy dict carries no
-    belief-contradiction information, so this adapter must never invent a
-    dispute. `outage_flag` is always False here too: a real retrieval
-    failure is a raised exception from the surfacing path itself, never a
-    shape this function would be handed (see pipeline.py's own outage
-    handling for the retrieval-failure case).
+    Every adapted token gets `record_type="experience"` (the closest fit
+    for an untyped retrieved snippet). `contradiction_state` and
+    `outage_flag` are no longer hardcoded (finding: a legacy dict carrying
+    real contradiction/outage information from a degraded retrieval path
+    was silently discarded here, blinding the agent to both) -- see
+    `_extract_contradiction_state` and `_extract_outage_flag`. A plain
+    legacy dict with neither key still resolves to "NONE"/False exactly as
+    before.
     """
     if not surfaced_memories:
         return []
@@ -200,6 +259,8 @@ def memories_to_activations(
                 },
                 relevance_score=relevance_score,
                 provenance=str(memory.get("source") or "memory"),
+                contradiction_state=_extract_contradiction_state(memory),
+                outage_flag=_extract_outage_flag(memory),
             )
         )
     return activations

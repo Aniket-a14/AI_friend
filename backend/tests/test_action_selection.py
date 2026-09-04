@@ -565,7 +565,12 @@ class TestBackwardCompatibility:
     async def test_flag_off_skips_candidate_selection_even_with_memory_activations(
         self, decision_service, monkeypatch
     ):
+        # Phase 07: candidate selection is reached when EITHER Phase 02 or
+        # Phase 03 is on (see decision.py's `_plan_social_response`), and
+        # both now default True -- so a genuine "both flags off" backward-
+        # compatibility test must monkeypatch both explicitly.
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         disputed_memory = MemoryActivation(
             record_id="belief-off",
             record_type="belief",
@@ -588,6 +593,7 @@ class TestBackwardCompatibility:
         self, monkeypatch, mock_llm_service, mock_memory_store
     ):
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         identity_manager = MagicMock()
         identity_manager.immutable_core = {"boundaries": []}
         decision_service = DecisionService(
@@ -627,6 +633,7 @@ class TestBackwardCompatibility:
         """The new `memory_activations` kwarg is optional -- every caller
         that predates it (this call omits it entirely) must keep working."""
         monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
         identity_manager = MagicMock()
         identity_manager.immutable_core = {"boundaries": []}
         decision_service = DecisionService(
@@ -1154,6 +1161,66 @@ class TestMemoriesToActivationsAdapter:
 
         assert activation.relevance_score == pytest.approx(0.42)
         assert activation.record_id == "legacy-0"
+
+
+# --------------------------------------------------------------------------
+# Fix round: B2 -- real contradiction/outage propagation in the adapter
+# --------------------------------------------------------------------------
+
+
+class TestMemoriesToActivationsContradictionAndOutage:
+    def test_explicit_contradiction_state_on_the_dict_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "contradiction_state": "CORRECTION"}]
+        )[0]
+        assert activation.contradiction_state == "CORRECTION"
+
+    def test_unrecognized_contradiction_state_falls_back_to_none(self):
+        activation = memories_to_activations(
+            [{"content": "x", "contradiction_state": "not-a-real-state"}]
+        )[0]
+        assert activation.contradiction_state == "NONE"
+
+    def test_linked_belief_record_status_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "belief_record": {"status": "DISPUTED"}}]
+        )[0]
+        assert activation.contradiction_state == "DISPUTED"
+
+    def test_linked_belief_record_active_status_maps_to_none(self):
+        activation = memories_to_activations(
+            [{"content": "x", "belief_record": {"status": "ACTIVE"}}]
+        )[0]
+        assert activation.contradiction_state == "NONE"
+
+    def test_linked_belief_record_contradiction_type_is_propagated(self):
+        """A temporal_store.py ContradictionDecision-shaped link surfaces
+        CONFLICT/UPDATE/CORRECTION/ELABORATION, not just a BeliefRecord's
+        own ACTIVE/SUPERSEDED/INVALIDATED/DISPUTED status."""
+        activation = memories_to_activations(
+            [{"content": "x", "belief": {"contradiction_type": "ELABORATION"}}]
+        )[0]
+        assert activation.contradiction_state == "ELABORATION"
+
+    def test_explicit_outage_flag_is_propagated(self):
+        activation = memories_to_activations(
+            [{"content": "x", "outage_flag": True}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_error_key_is_treated_as_an_outage(self):
+        activation = memories_to_activations(
+            [{"content": "x", "error": "retrieval backend unavailable"}]
+        )[0]
+        assert activation.outage_flag is True
+
+    def test_ordinary_legacy_dict_still_defaults_to_none_and_no_outage(self):
+        """Regression guard: a plain legacy dict with neither key must keep
+        resolving to the pre-Phase-07 default -- this adapter must never
+        invent a dispute or an outage the source data never asserted."""
+        activation = memories_to_activations([{"content": "x"}])[0]
+        assert activation.contradiction_state == "NONE"
+        assert activation.outage_flag is False
 
 
 class TestProductionMemoryWiring:

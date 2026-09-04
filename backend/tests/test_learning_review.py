@@ -95,13 +95,16 @@ def test_proposal_without_contradiction_is_not_flagged():
 
 
 @pytest.mark.asyncio
-async def test_default_config_still_auto_applies_directly(
-    reflection_service, mock_llm_service
+async def test_legacy_config_still_auto_applies_directly(
+    reflection_service, mock_llm_service, monkeypatch
 ):
-    """Regression guard: LEARNING_REVIEW_REQUIRED defaults False, so a
-    high-confidence suggestion must reach `evolve_persona` exactly as it did
-    before this phase -- mirrors test_reflection.py::test_identity_evolution_trigger."""
-    assert Config.LEARNING_REVIEW_REQUIRED is False
+    """Regression guard: with LEARNING_REVIEW_REQUIRED explicitly False (no
+    longer the Phase 07 default -- see test_review_required_routes_to_queue_
+    instead_of_auto_applying for the now-default-True path), a
+    high-confidence suggestion must still reach `evolve_persona` exactly as
+    it did before this phase -- mirrors
+    test_reflection.py::test_identity_evolution_trigger."""
+    monkeypatch.setattr(Config, "LEARNING_REVIEW_REQUIRED", False)
     mock_llm_service.generate.side_effect = [
         "[]",
         '{"new_traits": ["Logical"], "relationship": "Technical Partner", "confidence": 0.9}',
@@ -145,6 +148,62 @@ async def test_review_required_routes_to_queue_instead_of_auto_applying(
     pending = reflection_service.review_queue.pending()
     assert len(pending) == 1
     assert pending[0].suggestions["relationship"] == "Technical Partner"
+
+
+@pytest.mark.asyncio
+async def test_review_required_records_a_governed_proposal_alongside_the_legacy_queue(
+    reflection_service, mock_llm_service, monkeypatch
+):
+    """Phase 07: an ordinary, non-protected suggestion must also register
+    as a real, approved `LearningGovernor` proposal (Section 21's audit
+    trail) -- not just land in the legacy `review_queue` as before."""
+    monkeypatch.setattr(Config, "LEARNING_REVIEW_REQUIRED", True)
+    mock_llm_service.generate.side_effect = [
+        "[]",
+        '{"new_traits": ["Logical"], "relationship": "Technical Partner", "confidence": 0.9}',
+    ]
+    reflection_service.identity = MagicMock()
+    reflection_service.identity.personality = {"name": "my friend"}
+    reflection_service.identity.history = {"relationship": "Friend"}
+    reflection_service.identity.evolve_persona = AsyncMock()
+    reflection_service.vector = None
+
+    await reflection_service._consolidate(
+        [{"content": "Let's build a reactor", "response": "Logic first."}]
+    )
+
+    proposals = reflection_service.governor.list_proposals()
+    assert len(proposals) == 1
+    assert proposals[0].status.value == "APPROVED"
+    assert proposals[0].target_domain == "identity.reflection_persona_suggestion"
+
+
+@pytest.mark.asyncio
+async def test_review_required_rejects_a_suggestion_smuggling_a_protected_field(
+    reflection_service, mock_llm_service, monkeypatch
+):
+    """Section 21's hard invariant: a reflection suggestion that names a
+    CONSTITUTIONAL-tier field (here `mood_decay_rate`) must never reach the
+    human review queue at all, regardless of its confidence score -- the
+    identity core and safety boundaries are never learned, by any source."""
+    monkeypatch.setattr(Config, "LEARNING_REVIEW_REQUIRED", True)
+    mock_llm_service.generate.side_effect = [
+        "[]",
+        '{"relationship": "Technical Partner", "mood_decay_rate": 0.0, "confidence": 0.9}',
+    ]
+    reflection_service.identity = MagicMock()
+    reflection_service.identity.personality = {"name": "my friend"}
+    reflection_service.identity.history = {"relationship": "Friend"}
+    reflection_service.identity.evolve_persona = AsyncMock()
+    reflection_service.vector = None
+
+    await reflection_service._consolidate(
+        [{"content": "Let's build a reactor", "response": "Logic first."}]
+    )
+
+    reflection_service.identity.evolve_persona.assert_not_called()
+    assert reflection_service.review_queue.pending() == []
+    assert reflection_service.governor.list_proposals() == []
 
 
 @pytest.mark.asyncio
