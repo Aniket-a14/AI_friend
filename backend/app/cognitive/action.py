@@ -310,6 +310,49 @@ _CLARIFY_GUIDELINE = (
     "- Maintain your identity rules at all times."
 )
 
+# Phase 03 Package B: system-prompt guidelines for the REAPPRAISE and
+# REDIRECT_ATTENTION regulation actions (Architecture Sections 9, 10, 21,
+# 38), kept separate from _CHAT_GUIDELINE and _CLARIFY_GUIDELINE -- a
+# regulation-selected turn must not continue the conversation at its
+# current intensity, and a guideline written for ordinary chat or
+# clarification has no line saying that.
+_REAPPRAISE_GUIDELINE = (
+    "Guideline:\n"
+    "- The user appears to be in acute distress. You have chosen to offer "
+    "a grounding, reflective moment instead of continuing the conversation "
+    "at its current intensity.\n"
+    "- Speak ONE short, calm line that reframes the moment -- inviting a "
+    "step back together, not minimizing or dismissing what the user "
+    "feels.\n"
+    "- Do not diagnose, lecture, or use clinical language. Speak as a "
+    "close friend would.\n"
+    "- Maintain your identity rules at all times."
+)
+
+_REDIRECT_ATTENTION_GUIDELINE = (
+    "Guideline:\n"
+    "- The user appears to be in acute distress. You have chosen to "
+    "gently pivot toward a neutral, constructive, grounding topic instead "
+    "of continuing the conversation at its current intensity.\n"
+    "- Speak ONE short line that acknowledges the moment and offers a "
+    "concrete, grounding redirection -- something present, simple, or "
+    "steady to focus on.\n"
+    "- Do not dismiss or ignore what the user feels; the pivot is gentle, "
+    "not evasive.\n"
+    "- Maintain your identity rules at all times."
+)
+
+# Spoken when generation is unavailable (mocked/offline) or fails --
+# deterministic, so REAPPRAISE/REDIRECT_ATTENTION never realize as silence
+# during the exact moment they exist to catch.
+_REAPPRAISE_FALLBACK_LINE = (
+    "Let's take a step back and look at this calmly together for a moment."
+)
+_REDIRECT_ATTENTION_FALLBACK_LINE = (
+    "Let's pause on that for a second -- tell me one small, steady thing "
+    "that's true right now."
+)
+
 # Fix round (Codex review B4): stateless, shared across every call --
 # AntiInjectionGate holds no per-turn state.
 _ANTI_INJECTION_GATE = AntiInjectionGate()
@@ -1532,6 +1575,105 @@ class ActionService:
         yield {"type": "content", "data": text or fallback}
         yield {"type": "done", "data": "finished"}
 
+    async def _execute_reappraise(self, plan: ActionPlan):
+        """Phase 03 Package B: realize a REAPPRAISE-selected candidate as a
+        grounding, reflective turn (Architecture Sections 9, 10, 21, 38) --
+        cognitive reframing of acute distress, not ordinary chat.
+
+        Deliberately smaller than `_execute_respond_chat`, same reasoning as
+        `_execute_clarify`: a regulation utterance is short and low-risk, so
+        this path skips streaming validation, self-correction and endocrine
+        sampling. Prefers an LLM-generated line grounded in what the user
+        said; falls back to `_REAPPRAISE_FALLBACK_LINE` whenever there is no
+        LLM configured, generation raises, or returns nothing usable, so
+        acute distress never realizes as silence.
+        """
+        if not self.llm:
+            yield {"type": "content", "data": _REAPPRAISE_FALLBACK_LINE}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
+        msg = plan.payload.get("message", "")
+        system_instruction = f"{identity_prompt}\n\n{_REAPPRAISE_GUIDELINE}"
+        user_prompt = (
+            f'The user said: "{msg}"\n'
+            "This moment feels distressing. Offer one short, calm, grounding "
+            "line that reframes it without dismissing what the user feels -- "
+            "an invitation to look at it together, calmly."
+        )
+
+        try:
+            text = ""
+            async for chunk in self.llm.generate_stream(
+                prompt=user_prompt,
+                system=system_instruction,
+                model=plan.payload.get("model"),
+            ):
+                text += chunk
+            text = re.sub(
+                r"<thought>.*?</thought>|<think>.*?</think>",
+                "",
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            ).strip()
+        except Exception as e:
+            logger.warning(f"[Action] Reappraisal generation failed: {e}")
+            yield {"type": "content", "data": _REAPPRAISE_FALLBACK_LINE}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        yield {"type": "content", "data": text or _REAPPRAISE_FALLBACK_LINE}
+        yield {"type": "done", "data": "finished"}
+
+    async def _execute_redirect_attention(self, plan: ActionPlan):
+        """Phase 03 Package B: realize a REDIRECT_ATTENTION-selected
+        candidate as a gentle pivot to a neutral, grounding topic
+        (Architecture Sections 9, 10, 21, 38).
+
+        Same shape and reasoning as `_execute_reappraise`: short, low-risk,
+        no streaming validation or self-correction, deterministic fallback
+        (`_REDIRECT_ATTENTION_FALLBACK_LINE`) whenever generation is
+        unavailable, raises, or returns nothing usable.
+        """
+        if not self.llm:
+            yield {"type": "content", "data": _REDIRECT_ATTENTION_FALLBACK_LINE}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        identity_prompt = plan.payload.get("identity_prompt", "You are my friend.")
+        msg = plan.payload.get("message", "")
+        system_instruction = f"{identity_prompt}\n\n{_REDIRECT_ATTENTION_GUIDELINE}"
+        user_prompt = (
+            f'The user said: "{msg}"\n'
+            "This moment feels distressing. Gently pivot toward a neutral, "
+            "constructive, grounding topic in one short line, without "
+            "dismissing what the user feels."
+        )
+
+        try:
+            text = ""
+            async for chunk in self.llm.generate_stream(
+                prompt=user_prompt,
+                system=system_instruction,
+                model=plan.payload.get("model"),
+            ):
+                text += chunk
+            text = re.sub(
+                r"<thought>.*?</thought>|<think>.*?</think>",
+                "",
+                text,
+                flags=re.DOTALL | re.IGNORECASE,
+            ).strip()
+        except Exception as e:
+            logger.warning(f"[Action] Redirect-attention generation failed: {e}")
+            yield {"type": "content", "data": _REDIRECT_ATTENTION_FALLBACK_LINE}
+            yield {"type": "done", "data": "finished"}
+            return
+
+        yield {"type": "content", "data": text or _REDIRECT_ATTENTION_FALLBACK_LINE}
+        yield {"type": "done", "data": "finished"}
+
     async def _execute_store_memory(self, plan: ActionPlan):
         """Commit an explicitly requested memory."""
         content = plan.payload.get("content", "")
@@ -1583,6 +1725,14 @@ class ActionService:
 
         elif plan.action_type == "CLARIFY":
             async for out in self._execute_clarify(plan):
+                yield out
+
+        elif plan.action_type == "REAPPRAISE":
+            async for out in self._execute_reappraise(plan):
+                yield out
+
+        elif plan.action_type == "REDIRECT_ATTENTION":
+            async for out in self._execute_redirect_attention(plan):
                 yield out
 
         elif plan.action_type == "STORE_MEMORY":

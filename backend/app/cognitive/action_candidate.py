@@ -20,7 +20,24 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 ActionCandidateKind = Literal[
-    "SPEAK", "ASK", "WAIT", "OBSERVE", "RETRIEVE", "VERIFY", "REFLECT", "UPDATE_GOAL"
+    "SPEAK",
+    "ASK",
+    "WAIT",
+    "OBSERVE",
+    "RETRIEVE",
+    "VERIFY",
+    "REFLECT",
+    "UPDATE_GOAL",
+    # Phase 03 Package B: emotion regulation actions (Architecture Sections
+    # 9, 10, 21, 38) -- selectable candidates rather than silent affect
+    # overwriting. REAPPRAISE and REDIRECT_ATTENTION have generators in
+    # decision.py and executors in action.py; SUPPRESS_EXPRESSION is added
+    # to the type now, with no generator or executor wired to it yet, same
+    # reasoning as action_intent.py's UPDATE_STATE/EXTERNAL_ACT/CONTINUE --
+    # a schema ceiling, not a claim that every kind is reachable today.
+    "REAPPRAISE",
+    "REDIRECT_ATTENTION",
+    "SUPPRESS_EXPRESSION",
 ]
 
 # Weight applied to goal alignment (the fraction of a candidate's
@@ -28,6 +45,92 @@ ActionCandidateKind = Literal[
 # score. Kept well below 1.0 so alignment nudges the ranking rather than
 # overriding a candidate's own evaluated score.
 _GOAL_ALIGNMENT_WEIGHT = 0.2
+
+# Phase 03 Package B: global-control scoring modulation (Architecture
+# Sections 9, 10, 21). Each is an additive nudge layered on top of a
+# candidate's own score and goal alignment -- never a replacement for
+# either -- and is only ever applied to candidates that already survived
+# filter_constraints, which score_and_select's caller must always run
+# first (see that method's docstring). A candidate that violates an
+# identity boundary can never be modulated back into contention by any
+# combination of global controls.
+_URGENCY_GAIN_THRESHOLD = 0.5
+_EXPLORATION_BUDGET_THRESHOLD = 0.5
+_EFFORT_BUDGET_LOW_THRESHOLD = 0.3
+
+# High urgency rewards low risk and low cost -- a proxy for "fast response
+# time", since ActionCandidate carries no explicit latency field and cost
+# already represents how much a candidate asks of the turn.
+_URGENCY_RISK_WEIGHT = 0.3
+_URGENCY_COST_WEIGHT = 0.2
+
+# A wide exploration budget rewards uncertainty as a proxy for novelty and
+# candidate breadth: a candidate the agent is less certain about is, by
+# construction, further from the safe well-trodden default -- exactly what
+# a wide exploration budget should nudge the ranking toward.
+_EXPLORATION_UNCERTAINTY_WEIGHT = 0.25
+
+# A tight effort budget penalizes cost (a heavy, multi-step candidate); the
+# penalty grows as the budget shrinks toward 0, via (1 - effort_budget).
+_EFFORT_COST_PENALTY_WEIGHT = 0.3
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _control_value(controls: Any, key: str, default: float) -> float:
+    """Duck-typed read of one global-control signal.
+
+    Accepts either a mapping (a plain dict, or Package A's GlobalControls
+    pydantic model dumped to one) or an attribute-bearing object (the
+    GlobalControls model itself) -- this module intentionally never imports
+    Package A's global_controls.py (see this file's module docstring on the
+    parallel work package split), so it cannot assume a concrete type.
+    """
+    if controls is None:
+        return default
+    if isinstance(controls, dict):
+        value = controls.get(key, default)
+    else:
+        value = getattr(controls, key, default)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _control_modulation(candidate: ActionCandidate, global_controls: Any) -> float:
+    """Score adjustment from global controls (Architecture Sections 9, 10).
+
+    Returns 0.0 when no controls are supplied, so a caller that never passes
+    global_controls sees byte-identical scoring to before this modulation
+    existed. This function is never consulted by filter_constraints, and
+    score_and_select's caller must always run that first -- see this
+    module's constraint-first invariant.
+    """
+    if global_controls is None:
+        return 0.0
+
+    urgency_gain = _control_value(global_controls, "urgency_gain", 0.0)
+    exploration_budget = _control_value(global_controls, "exploration_budget", 0.5)
+    effort_budget = _control_value(global_controls, "effort_budget", 0.5)
+
+    risk = _clamp01(candidate.risk)
+    cost = _clamp01(candidate.cost)
+    uncertainty = _clamp01(candidate.uncertainty)
+
+    modulation = 0.0
+    if urgency_gain > _URGENCY_GAIN_THRESHOLD:
+        modulation += urgency_gain * _URGENCY_RISK_WEIGHT * (1.0 - risk)
+        modulation -= urgency_gain * _URGENCY_COST_WEIGHT * cost
+    if exploration_budget > _EXPLORATION_BUDGET_THRESHOLD:
+        modulation += (
+            exploration_budget * _EXPLORATION_UNCERTAINTY_WEIGHT * uncertainty
+        )
+    if effort_budget < _EFFORT_BUDGET_LOW_THRESHOLD:
+        modulation -= (1.0 - effort_budget) * _EFFORT_COST_PENALTY_WEIGHT * cost
+    return modulation
 
 
 class ActionCandidate(BaseModel):
@@ -172,15 +275,32 @@ class CandidateSelector:
         return len(overlap) / len(candidate.target_goal_ids)
 
     def score_and_select(
-        self, candidates: list[ActionCandidate], active_goals: list[str]
+        self,
+        candidates: list[ActionCandidate],
+        active_goals: list[str],
+        global_controls: Any | None = None,
     ) -> tuple[ActionCandidate, list[dict[str, Any]]]:
-        """Ranks surviving candidates by score plus goal alignment.
+        """Ranks surviving candidates by score plus goal alignment plus
+        global-control modulation.
 
         Raises ValueError on an empty candidate list -- this method never
         invents a winner. A caller with zero surviving candidates (e.g.
         everything failed filter_constraints) must supply a safe fallback
         candidate (such as WAIT, with no constraint_claims) before reaching
         this point.
+
+        `global_controls` (Phase 03 Package B, optional and additive) is a
+        GlobalControls-shaped object or dict with urgency_gain,
+        exploration_budget and effort_budget signals -- see
+        `_control_modulation` for exactly how each nudges the ranking.
+        Passing `None` (the default) reproduces the pre-Phase-03 scoring
+        exactly.
+
+        CONSTRAINT-FIRST INVARIANT: this method must only ever be called
+        with candidates that have already survived `filter_constraints`.
+        Nothing in `global_controls` can let a forbidden candidate back into
+        contention -- modulation only reweighs among candidates the
+        constraint gate already allowed through.
 
         Returns (winner, rejected) where rejected carries a reason dict per
         runner-up, ordered from strongest to weakest alternative.
@@ -189,8 +309,11 @@ class CandidateSelector:
             raise ValueError("score_and_select requires at least one candidate")
 
         def combined_score(candidate: ActionCandidate) -> float:
-            return candidate.score + _GOAL_ALIGNMENT_WEIGHT * self._goal_alignment(
-                candidate, active_goals
+            return (
+                candidate.score
+                + _GOAL_ALIGNMENT_WEIGHT
+                * self._goal_alignment(candidate, active_goals)
+                + _control_modulation(candidate, global_controls)
             )
 
         ranked = sorted(candidates, key=combined_score, reverse=True)
