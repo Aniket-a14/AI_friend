@@ -16441,3 +16441,74 @@ cancellation after dispatcher timeout.
 - Empirical results documented in `orchestration/PHASE_05/BENCHMARK_RESULTS.md`.
 
 **NOT done:** Live hardware actuator integrations, real multi-channel microphone array beamforming, and Phase 06 (Optional advanced learning and planning) have not started.
+
+## 2026-09-04 -- Codex Phase 06 Package A: verified planning and episodic simulation
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Added typed, bounded plan artifacts; deterministic verification rejects
+  over-budget plans, causal and fallback cycles, unfulfilled initial or step
+  preconditions, broken invariants, invalid effects, and terminal failures.
+- Added detached deterministic execution with bounded retries, atomic step
+  effect rollback, and explicit fallback transition traces.
+- Added prospective policy and plan rollouts over deep-copied workspace maps.
+  Every emitted simulated percept, action, and outcome is tagged
+  `is_simulation=True`; tagged records are rejected before a production memory
+  or state commit callback can execute.
+
+Verification:
+
+- Focused suite: 10 tests passed, with zero failures or errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no D, E, or F functions.
+- New files were checked as pure 7-bit ASCII and `git diff --check` passed.
+- Mutating the simulation tag to `False` caused the dedicated quarantine test
+  to fail; the correct `True` tag was restored.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
+
+## 2026-09-04 -- Codex Phase 06 Package A peer-review fix round
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Fallback chain cycle detection runs before completed-step handling, so
+  attempted fallback cycles fail closed with an execution error.
+- Action callbacks receive `PlanExecutionContext`; prospective callbacks see
+  `is_simulation=True` and are documented as pure and side-effect-free.
+- Simulations now fail closed for invalid plans and expose explicit success and
+  error fields for invalid or failed executions.
+- Causal producer discovery prefers declared preceding producers, avoiding
+  false cycles from later redundant effects. DELETE cannot establish NOT_EQUAL
+  because missing values do not satisfy that predicate.
+- Plan artifacts reject self-referential fallback steps.
+
+Verification:
+
+- Focused suite: 20 passed, zero failures, and zero errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` passed with no D, E, or F functions.
+- Mutation check: disabling the fallback-cycle guard failed the dedicated
+  fallback-cycle regression; the correct guard was restored.
+- Changed Phase 06 code and documentation passed 7-bit ASCII and diff checks.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
