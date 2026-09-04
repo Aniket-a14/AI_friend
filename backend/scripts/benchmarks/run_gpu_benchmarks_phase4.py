@@ -161,13 +161,13 @@ async def run_bm_gpu_p4_01(client: OllamaClient) -> dict[str, Any]:
                 )
 
             # 3. Metacognitive Candidate Selection
-            decision = selector.score_and_select(
+            selected, _rejected = selector.score_and_select(
                 candidates,
                 active_goals=active_goals,
                 metacognitive_directive=directive.value,
                 privacy_filter=privacy_filter,
             )
-            assert decision.selected is not None
+            assert selected is not None
 
             # 4. LLM Generation
             first_token_time = None
