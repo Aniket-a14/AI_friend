@@ -21,6 +21,7 @@ promoted to typed top-level attributes.
 
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from typing import Any, Literal
@@ -50,10 +51,35 @@ def _new_percept_id(modality: str) -> str:
     return f"{modality}-{uuid.uuid4().hex}"
 
 
+def _percept_id(modality: str, data: dict[str, Any]) -> str:
+    """Deterministic when the source event carries its own identity
+    (`utterance_id`/`event_id`/`id`/`turn_id`); random otherwise.
+
+    JetStream redelivers an event whenever its handler is slow to ack (see
+    CLAUDE.md's finding A1), and a `percept_id` that changed on every
+    redelivery would make idempotency at any downstream consumer -- a
+    workspace commit, outcome attribution -- impossible: the same real-world
+    event would mint a second, distinct percept each time. Deriving the id
+    from the wire event's own identity instead means redelivery of the exact
+    same message produces the exact same `percept_id`.
+    """
+    source_id = (
+        data.get("utterance_id")
+        or data.get("event_id")
+        or data.get("id")
+        or data.get("turn_id")
+    )
+    if source_id:
+        return f"percept:{modality}:{source_id}"
+    return _new_percept_id(modality)
+
+
 def _clamp_confidence(value: Any, default: float = 1.0) -> float:
     try:
         confidence = float(value)
     except (TypeError, ValueError):
+        return default
+    if not math.isfinite(confidence):
         return default
     return max(0.0, min(1.0, confidence))
 
@@ -64,7 +90,7 @@ def from_chat_input(data: dict[str, Any]) -> PerceptEnvelope:
     if not isinstance(metadata, dict):
         metadata = {}
     return PerceptEnvelope(
-        percept_id=_new_percept_id("text"),
+        percept_id=_percept_id("text", data),
         modality="text",
         source=str(metadata.get("source") or "chat_input"),
         observed_at=time.time(),
@@ -111,7 +137,7 @@ def from_facial_reflex(data: dict[str, Any]) -> PerceptEnvelope:
 def from_audio_stop(data: dict[str, Any]) -> PerceptEnvelope:
     """`audio.stop` (confirmed or speculative interrupt -- `contracts.AudioStop`)."""
     return PerceptEnvelope(
-        percept_id=_new_percept_id("audio"),
+        percept_id=_percept_id("audio", data),
         modality="audio",
         source=str(data.get("intent_type") or "VOICE_INTERRUPTION"),
         observed_at=time.time(),
@@ -136,7 +162,7 @@ def from_playback_progress(data: dict[str, Any]) -> PerceptEnvelope:
     """`audio.playback.progress` (transport_agent's relayed PCM progress --
     `contracts.AudioPlaybackProgress`)."""
     return PerceptEnvelope(
-        percept_id=_new_percept_id("playback"),
+        percept_id=_percept_id("playback", data),
         modality="playback",
         source="transport_agent",
         observed_at=time.time(),

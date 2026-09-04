@@ -223,7 +223,7 @@ def test_brain_agent_emits_fallback_when_stream_errors_without_content():
         return_value={"emotion": "neutral"}
     )
 
-    async def _error_only_stream(_raw_event):
+    async def _error_only_stream(_raw_event, percept=None):
         yield {
             "type": "error",
             "data": "No compatible Ollama generation endpoint found",

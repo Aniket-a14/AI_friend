@@ -30,8 +30,9 @@ from .appraisal import AppraisalEngine, AppraisalVector
 from .decision import DecisionService
 from .identity import IdentityManager
 from .learning import ReflectionService
+from .percept import PerceptEnvelope
 from .perception import PerceptionService
-from .pipeline import CognitivePipeline
+from .pipeline import CognitivePipeline, WorkspaceSnapshotLike
 from .reappraisal import ReappraisalEngine
 
 logger = logging.getLogger(__name__)
@@ -407,11 +408,21 @@ class CognitiveService:
         return asyncio.create_task(wrapped())
 
     async def process_event(
-        self, raw_event: dict[str, Any]
+        self,
+        raw_event: dict[str, Any],
+        percept: PerceptEnvelope | None = None,
+        workspace: WorkspaceSnapshotLike | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Mesh-aware wrapper for the pure CognitivePipeline.
         Handles transport side-effects like NATS signaling and reflection triggers.
+
+        `percept`/`workspace` are forwarded to `CognitivePipeline.execute`
+        unchanged (§7/§38 causal slice) -- this wrapper has no use for them
+        itself, but was the one hop between `BrainAgent.last_percept` and
+        Stage 6's `ActionIntent` commitment that dropped them on the floor,
+        so every production turn committed against the `(0, 0)` fallback
+        tuple regardless of the real workspace revision.
         """
         event_metadata = raw_event.get("metadata", {})
         latency_metadata = (
@@ -421,7 +432,10 @@ class CognitiveService:
         )
 
         async for output in self.pipeline.execute(
-            raw_event, surfaced_memories=self.surfaced_memories
+            raw_event,
+            surfaced_memories=self.surfaced_memories,
+            percept=percept,
+            workspace=workspace,
         ):
             if output["type"] == "mesh_signal":
                 subject = output["subject"]

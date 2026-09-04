@@ -355,10 +355,11 @@ async def test_on_nats_audio_queues_character_offset_and_word_index():
     )
 
     item = await agent.audio_queue.get()
-    _, _, _, turn_id, character_offset, word_index = item
+    _, _, _, turn_id, character_offset, word_index, completed = item
     assert turn_id == "turn-1"
     assert character_offset == 9
     assert word_index == 2
+    assert completed is False
 
 
 @pytest.mark.asyncio
@@ -368,10 +369,11 @@ async def test_on_nats_audio_queues_none_offsets_when_metadata_lacks_them():
     await agent._on_nats_audio(b"pcm", metadata={"turn_id": "turn-1"})
 
     item = await agent.audio_queue.get()
-    _, _, _, turn_id, character_offset, word_index = item
+    _, _, _, turn_id, character_offset, word_index, completed = item
     assert turn_id == "turn-1"
     assert character_offset is None
     assert word_index is None
+    assert completed is False
 
 
 @pytest.mark.asyncio

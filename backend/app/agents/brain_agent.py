@@ -150,6 +150,12 @@ class BrainAgent(BaseAgent):
         self.last_percept: PerceptEnvelope | None = None
         self._active_action_intent: ActionIntent | None = None
         self._last_outcome_record: OutcomeRecord | None = None
+        # FIX-CLD-03: `_last_outcome_record` above is overwritten by the next
+        # turn's outcome, so nothing durable let a caller look back at what
+        # happened on an earlier turn once a new one started -- this is that
+        # durable (in-process, not yet persisted -- WorkspaceStore's job)
+        # ledger, queryable via `get_outcome_history`.
+        self._outcome_history: list[OutcomeRecord] = []
         # Bucket 1 (VOICE_REMEDIATION_PLAN.md): stamped on the first playback
         # progress frame of each turn (see _on_audio_playback_progress) and
         # read by _on_chat_input's barge-in grace period below.
@@ -399,6 +405,16 @@ class BrainAgent(BaseAgent):
             error=error,
         )
         self._last_outcome_record = record
+        # FIX-CLD-03: `getattr(..., None)` rather than a direct read -- some
+        # test doubles build a `BrainAgent` via `object.__new__`, bypassing
+        # `__init__` (see test_barge_in_truncation.py), so this attribute may
+        # not exist yet on `self`. Matches this file's existing pattern for
+        # `_active_action_intent`/`_active_response_turn_id`.
+        history = getattr(self, "_outcome_history", None)
+        if history is None:
+            history = []
+            self._outcome_history = history
+        history.append(record)
         logger.info(
             "[Brain] OutcomeRecord id=%s intent=%s status=%s offset=%d elapsed_ms=%.1f",
             record.outcome_id,
@@ -408,6 +424,16 @@ class BrainAgent(BaseAgent):
             record.elapsed_ms,
         )
         return record
+
+    def get_outcome_history(self, turn_id: str) -> list[OutcomeRecord]:
+        """FIX-CLD-03: every terminal `OutcomeRecord` emitted for `turn_id`,
+        in emission order. A turn normally has exactly one (COMPLETED,
+        CANCELLED, or a single TRUNCATED), but this does not assume that --
+        it filters the full ledger rather than tracking a per-turn slot, so
+        it stays correct even if that ever changes.
+        """
+        history = getattr(self, "_outcome_history", None) or []
+        return [record for record in history if record.turn_id == turn_id]
 
     async def _cancel_active_generation(self, reason: str):
         """Cancel the in-flight generation task and wait for it to fully unwind.
@@ -553,6 +579,7 @@ class BrainAgent(BaseAgent):
         Returns:
             The newly created task
         """
+        cancelled_a_running_turn = False
         async with self._generation_lock:
             # Cancel and await prior task if it exists
             prior_task = self._active_generation_task
@@ -567,11 +594,27 @@ class BrainAgent(BaseAgent):
                     logger.exception(
                         "Previous generation task raised while being cancelled"
                     )
+                cancelled_a_running_turn = True
 
             # Create and assign new task while still holding the lock
             new_task = asyncio.create_task(coro)
             self._active_generation_task = new_task
-            return new_task
+
+        if cancelled_a_running_turn:
+            # FIX-CLD-05: a new incoming turn preempting one still in flight
+            # never called `_cancel_active_generation`/`_truncate_interrupted_reply`
+            # (those only run on `_on_audio_stop`'s path), so the replaced
+            # turn's ActionIntent previously got no terminal record at all --
+            # its partial `last_assistant_response` is simply overwritten by
+            # `_process_chat_input_flow`'s reset for the new turn. Read
+            # before returning: `new_task` (`coro`) has only been scheduled
+            # above, not yet run, so `_active_action_intent` here is still
+            # the interrupted turn's own, never the new one's.
+            async with self._turn_state_lock:
+                intent = getattr(self, "_active_action_intent", None)
+            await self._emit_outcome_record(intent, status="CANCELLED", error=reason)
+
+        return new_task
 
     async def _on_chat_input(self, message: dict[str, Any]):
         now = datetime.now()
@@ -804,7 +847,9 @@ class BrainAgent(BaseAgent):
                 self.last_assistant_response = None
                 self.last_audio_progress = None
                 self._active_action_intent = None
-            generator = self.cognitive_core.process_event(raw_event)
+            generator = self.cognitive_core.process_event(
+                raw_event, percept=self.last_percept
+            )
 
         # Wrap generator to monitor TTFT and inject fillers
         wrapped_generator = self.conversational_runtime.monitor_stream_and_fill(
@@ -874,11 +919,17 @@ class BrainAgent(BaseAgent):
                     # the full text this same handler's playback reports
                     # finished delivering.
                     delivered = self.last_assistant_response or ""
+                    # FIX-CLD-04: trust the playback-reported offset rather
+                    # than assuming every COMPLETED frame delivered the full
+                    # text -- `min(...)` still clamps to `len(delivered)`
+                    # when the report reaches or exceeds it (the common
+                    # case), rather than indexing past the actual string.
+                    offset = min(progress.character_offset, len(delivered))
                     await self._emit_outcome_record(
                         getattr(self, "_active_action_intent", None),
                         status="COMPLETED",
                         actual_delivered_text=delivered,
-                        character_offset=len(delivered),
+                        character_offset=offset,
                     )
             logger.debug(
                 f"🔊 Audio Playback Progress | Word Index: {progress.word_index} | Offset: {progress.character_offset} | Completed: {progress.completed}"
