@@ -16203,3 +16203,34 @@ Verification:
 
 **NOT done:** Package B integration, runtime toggle wiring, GPU validation,
 merge, push, and remote CI remain outside this scoped fix round.
+
+### 2026-09-04 — Orchestrator (Antigravity) — Phase 02 Integrated, Benchmarked & Phase Gate PASSED
+
+- Merged `codex/phase-02` (Package A) and `claude/phase-02` (Package B) into `integration/phase-02`.
+- Package A delivered bi-temporal memory truth in `backend/app/state/temporal_store.py` and `memory_records.py`:
+  - Append-only immutable `ExperienceRecord` (frozen model).
+  - Explicit validity intervals (`valid_from <= t < valid_until`) on `BeliefRecord`.
+  - Four contradiction transitions: `ELABORATION`, `UPDATE`, `CORRECTION`, and `CONFLICT`.
+  - Typed domain exceptions (`MemoryStoreError`, `DuplicateRecordError`, `RecordNotFoundError`, `InvalidIntervalError`).
+  - Round-trip `ProcedureRecord` SQLite persistence.
+- Package B delivered action candidate selection and memory activation in `backend/app/cognitive/`:
+  - `ActionCandidate` model and `CandidateSelector` with constraint-first boundary filtering before utility scoring.
+  - `MemoryActivation` model with typed outage reporting (`outage_flag=True`) and `memories_to_activations` adapter.
+  - `AntiInjectionGate` with NFKC normalization, zero-width stripping, role/control delimiter filters, and whole-field quarantine wired into prompt assembly.
+  - `ActionKind.ASK` realization as a targeted `CLARIFY` plan with deterministic safe fallback.
+  - Word-boundary phrase matching with substring pre-filtering and pattern cache, reducing filter latency from 698 us to 25.7 us.
+- Full suite verification:
+  - **1,990 passed, 0 failures, 0 errors, 0 skipped** across the entire backend.
+  - Ruff: clean across the entire repository.
+- Benchmark verification (all 5 benchmarks passed):
+  - **BM-LOC-P2-01** (Bi-temporal Query Throughput): 1,000 queries; p50 = 0.63 ms, p95 = 1.14 ms (threshold <= 2.0 ms) -> **PASS**.
+  - **BM-LOC-P2-02** (Contradiction Transition Latency): 1,000 transitions; p50 = 0.08 ms, p95 = 0.10 ms (threshold <= 3.0 ms) -> **PASS**.
+  - **BM-LOC-P2-03** (Constraint-First Filter Latency): 10,000 iterations; mean = 24.71 us, p95 = 25.71 us (threshold <= 50.0 us) -> **PASS**.
+  - **BM-GPU-P2-01** (E2E Turn Latency on RTX 2060 Super `qwen2.5:3b`): 15 standardized prompts; baseline mean TTFT = 175.04 ms, candidate mean TTFT = 146.08 ms; mean delta = **-28.96 ms**, p95 delta = **+1.86 ms** (threshold <= 20.0 ms) -> **PASS**.
+  - **BM-GPU-P2-02** (Multi-Turn Memory Truth Live Soak on RTX 2060 Super): 20 live turns against Ollama with evolving user facts; fact accuracy = **100.0%** (20/20), 0 CAS conflicts, resident memory variance = **0.0%** -> **PASS**.
+- Evaluated all 12 criteria in `ACCEPTANCE_CRITERIA.md`: 100% passed.
+- Issued formal Phase Gate verdict **`PASS`** in `orchestration/PHASE_02/PHASE_GATE.md`.
+- Empirical results documented in `orchestration/PHASE_02/BENCHMARK_RESULTS.md`.
+
+**NOT done:** Phase 03 implementation (subconscious reflection, graph consolidation, and episodic retrieval integration) has not started.
+
