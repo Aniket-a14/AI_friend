@@ -179,9 +179,9 @@ def run_bm_loc_03() -> dict[str, Any]:
     ]
 
     for i in range(num_events):
-        mod_name, payload, fn = modalities[i % len(modalities)]
+        _mod_name, payload, fn = modalities[i % len(modalities)]
         t0 = time.perf_counter_ns()
-        env = fn(payload)
+        _env = fn(payload)
         t1 = time.perf_counter_ns()
         latencies_us.append((t1 - t0) / 1_000.0)
 
