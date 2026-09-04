@@ -16124,3 +16124,20 @@ and AC-GPU-03 (20-turn live soak test) remain strictly held as `PENDING_GPU` unt
 RTX 2060 Super home server is powered on; no placeholder or synthetic benchmark data was
 recorded; merge from `integration/phase-01` to `main` is withheld until GPU validation.
 
+### 2026-09-04 — Orchestrator (Antigravity) — Phase 01 GPU Benchmarks & Phase Gate PASSED
+
+- Connected to `home-gpu` (NVIDIA GeForce RTX 2060 Super 8GB, CUDA 13.2, Ollama `qwen2.5:3b`).
+- Executed full Phase 01 benchmark suite (`BENCHMARK_PLAN.md`):
+  - **BM-LOC-01** (Workspace CAS Commit Overhead): 5,000 SQLite commits; p50 = 0.086 ms, p95 = 0.132 ms (threshold $\le 5.0$ ms) -> **PASS**.
+  - **BM-LOC-02** (Snapshot Serialization Size): 100 sessions; mean = 950 bytes (threshold $\le 2,048$ bytes) -> **PASS**.
+  - **BM-LOC-03** (Percept Normalization Latency): 10,000 events; p95 = 2.75 $\mu\text{s}$ (threshold $\le 100.0\ \mu\text{s}$) -> **PASS**.
+  - **BM-GPU-01** (E2E Turn TTFT Delta): 15 standardized turns against live `qwen2.5:3b`; baseline mean TTFT = 18.86 ms, candidate mean TTFT = 21.97 ms; mean delta = **+3.12 ms** (threshold $\le 10.0$ ms); p95 delta = **+9.08 ms** (threshold $\le 20.0$ ms) -> **PASS**.
+  - **BM-GPU-02** (Acoustic Barge-In Outcome Latency): 10 interruptions; 100% truncated with 0 byte character offset difference; max stop-to-record latency = **0.400 ms** (threshold $\le 50.0$ ms) -> **PASS**.
+  - **BM-GPU-03** (20-Turn Longitudinal State Stability): 20 sequential turns; revisions strictly monotonic $1 \to 20$; 0 CAS conflicts; resident memory variance = **0.03%** (+36 KB over 20 turns, threshold $\le 5.0\%$) -> **PASS**.
+- Evaluated all 9 acceptance criteria in `ACCEPTANCE_CRITERIA.md`: 100% passed (AC-01..09, AC-GPU-01..03).
+- Issued formal Phase Gate verdict **`PASS`** in `orchestration/PHASE_01/PHASE_GATE.md`.
+- Empirical results documented in `orchestration/PHASE_01/BENCHMARK_RESULTS.md`.
+
+**NOT done:** Merge of `integration/phase-01` into `main` awaits final user confirmation; Phase 02 task decomposition has not started.
+
+
