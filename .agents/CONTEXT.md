@@ -16441,3 +16441,38 @@ cancellation after dispatcher timeout.
 - Empirical results documented in `orchestration/PHASE_05/BENCHMARK_RESULTS.md`.
 
 **NOT done:** Live hardware actuator integrations, real multi-channel microphone array beamforming, and Phase 06 (Optional advanced learning and planning) have not started.
+
+## 2026-09-04 -- Codex Phase 06 Package A: verified planning and episodic simulation
+
+Changed files:
+
+- `backend/app/cognitive/planning.py`
+- `backend/app/cognitive/simulation.py`
+- `backend/tests/test_planning_simulation.py`
+- `orchestration/PHASE_06/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- Added typed, bounded plan artifacts; deterministic verification rejects
+  over-budget plans, causal and fallback cycles, unfulfilled initial or step
+  preconditions, broken invariants, invalid effects, and terminal failures.
+- Added detached deterministic execution with bounded retries, atomic step
+  effect rollback, and explicit fallback transition traces.
+- Added prospective policy and plan rollouts over deep-copied workspace maps.
+  Every emitted simulated percept, action, and outcome is tagged
+  `is_simulation=True`; tagged records are rejected before a production memory
+  or state commit callback can execute.
+
+Verification:
+
+- Focused suite: 10 tests passed, with zero failures or errors in JUnit XML.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no D, E, or F functions.
+- New files were checked as pure 7-bit ASCII and `git diff --check` passed.
+- Mutating the simulation tag to `False` caused the dedicated quarantine test
+  to fail; the correct `True` tag was restored.
+
+NOT done: no production memory/store, NATS, or action-service wiring was
+introduced. These pure planning and quarantine contracts await later
+integration work.
