@@ -16083,3 +16083,22 @@ without changing the Codex worktree.
 the Pydantic config declaration and production store wiring remain integration
 dependencies outside Codex's assigned files; no GPU work was attempted and all
 GPU criteria remain `PENDING_GPU`; no branch was merged or pushed.
+
+### 2026-09-04 — Codex Phase 01 fix round
+
+- Changed `backend/app/state/workspace.py` and
+  `backend/app/state/workspace_store.py` to add typed epoch divergence errors,
+  explicit focus/pending-action clear flags, and namespace-preserving
+  pending-action merges.
+- Changed `backend/app/state/session_state.py` to retry dual-write CAS commits
+  up to three times with fresh snapshots, preserve existing action namespaces,
+  and warn/use the stable `default` workspace ID when no ID is supplied.
+- Extended `backend/tests/test_workspace_store.py` with clear, affect-restart,
+  divergence, namespacing, retry, and fallback-warning regression coverage.
+- Verification: focused suite **23/23 passed**; full backend suite **1,853/1,853
+  passed** with loopback socket permission; `ruff check .` and `git diff --check`
+  passed. The unprivileged full-suite attempt had eight known NATS socket setup
+  errors and no assertion failures.
+
+**NOT done:** Claude-owned Phase 01 fixes, production workspace wiring, GPU
+validation, merge, and push remain outside this fix round.

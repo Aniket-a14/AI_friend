@@ -26,18 +26,26 @@ keep this change additive on the hottest path in the codebase.
 
 from __future__ import annotations
 
+import copy
+import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
 from ..config import Config
-from .workspace import CognitiveWorkspaceSnapshot, WorkspaceCommand
+from .workspace import (
+    CognitiveWorkspaceSnapshot,
+    StaleWorkspaceError,
+    WorkspaceCommand,
+)
 
 if TYPE_CHECKING:
     from .workspace_store import WorkspaceStore
 
 InterruptionState = Literal["none", "duck", "stop"]
+DEFAULT_WORKSPACE_SESSION_ID = "default"
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -87,7 +95,7 @@ async def persist_session_state(
     if workspace_store is not None and _workspace_authoritative_enabled():
         await _persist_workspace_session_state(
             workspace_store,
-            workspace_session_id or session_state.turn_id,
+            _resolve_workspace_session_id(workspace_session_id, "persist"),
             session_state,
         )
     if store is not None:
@@ -109,11 +117,7 @@ async def load_session_state(
     if workspace_store is None or not _workspace_authoritative_enabled():
         return legacy_state
 
-    session_id = workspace_session_id or (
-        legacy_state.turn_id if legacy_state is not None else None
-    )
-    if session_id is None:
-        return legacy_state
+    session_id = _resolve_workspace_session_id(workspace_session_id, "load")
     snapshot = await workspace_store.get_snapshot(session_id)
     workspace_state = _session_state_from_workspace(snapshot)
     return workspace_state or legacy_state
@@ -124,23 +128,54 @@ def _workspace_authoritative_enabled() -> bool:
     return bool(getattr(Config, "WORKSPACE_AUTHORITATIVE", False))
 
 
+def _resolve_workspace_session_id(
+    workspace_session_id: str | None, operation: str
+) -> str:
+    if workspace_session_id:
+        return workspace_session_id
+    _logger.warning(
+        "workspace_session_id was not supplied for session-state %s; "
+        "falling back to stable default %r",
+        operation,
+        DEFAULT_WORKSPACE_SESSION_ID,
+    )
+    return DEFAULT_WORKSPACE_SESSION_ID
+
+
 async def _persist_workspace_session_state(
     workspace_store: WorkspaceStore,
     session_id: str,
     session_state: SessionState,
 ) -> None:
-    snapshot = await workspace_store.get_snapshot(session_id)
-    await workspace_store.commit_transition(
-        WorkspaceCommand(
-            session_id=session_id,
-            expected_epoch=snapshot.epoch,
-            expected_revision=snapshot.revision,
-            percept_id=session_state.utterance_id,
-            focus_update=session_state.turn_id,
-            pending_action={"legacy_session_state": session_state.to_dict()},
-            command_source="session_state.dual_write",
-        )
-    )
+    for attempt in range(3):
+        snapshot = await workspace_store.get_snapshot(session_id)
+        pending_action = copy.deepcopy(snapshot.pending_action)
+        if not isinstance(pending_action, dict):
+            pending_action = {}
+        pending_action["legacy_session_state"] = session_state.to_dict()
+        try:
+            await workspace_store.commit_transition(
+                WorkspaceCommand(
+                    session_id=session_id,
+                    expected_epoch=snapshot.epoch,
+                    expected_revision=snapshot.revision,
+                    percept_id=session_state.utterance_id,
+                    focus_update=session_state.turn_id,
+                    pending_action=pending_action,
+                    command_source="session_state.dual_write",
+                )
+            )
+            return
+        except StaleWorkspaceError as exc:
+            if attempt == 2:
+                _logger.warning(
+                    "Workspace session-state dual-write fell back after %d "
+                    "stale-write attempts for session %r: %s",
+                    attempt + 1,
+                    session_id,
+                    exc,
+                )
+                return
 
 
 def _session_state_from_workspace(

@@ -18,6 +18,7 @@ from .workspace import (
     CognitiveWorkspaceSnapshot,
     StaleWorkspaceError,
     WorkspaceCommand,
+    WorkspaceDivergenceError,
     WorkspaceTransitionRecord,
 )
 
@@ -240,7 +241,7 @@ class SQLiteWorkspaceStore:
             workspace = CognitiveWorkspace.fresh(session_id, epoch)
             self._insert_workspace(workspace)
         elif workspace.epoch != epoch:
-            raise RuntimeError(
+            raise WorkspaceDivergenceError(
                 f"Workspace epoch metadata diverged for session {session_id!r}"
             )
         return workspace
@@ -299,21 +300,27 @@ class SQLiteWorkspaceStore:
         if command.affect_update is not None:
             affect_snapshot.update(command.affect_update)
 
+        pending_action = copy.deepcopy(current.pending_action)
+        if command.pending_action is not None:
+            if pending_action is None:
+                pending_action = {}
+            pending_action.update(copy.deepcopy(command.pending_action))
+        if command.clear_pending_action:
+            pending_action = None
+
+        focus = (
+            command.focus_update if command.focus_update is not None else current.focus
+        )
+        if command.clear_focus:
+            focus = None
+
         return CognitiveWorkspace(
             session_id=current.session_id,
             epoch=current.epoch,
             revision=current.revision + 1,
-            focus=(
-                command.focus_update
-                if command.focus_update is not None
-                else current.focus
-            ),
+            focus=focus,
             active_goals=active_goals,
-            pending_action=(
-                copy.deepcopy(command.pending_action)
-                if command.pending_action is not None
-                else copy.deepcopy(current.pending_action)
-            ),
+            pending_action=pending_action,
             affect_snapshot=affect_snapshot,
             last_percept_id=(
                 command.percept_id

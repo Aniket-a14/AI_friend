@@ -12,6 +12,10 @@ class StaleWorkspaceError(Exception):
     """Raised when a workspace update fails CAS validation (stale epoch or revision)."""
 
 
+class WorkspaceDivergenceError(StaleWorkspaceError):
+    """Raised when epoch metadata and the persisted workspace disagree."""
+
+
 @dataclass
 class CognitiveWorkspace:
     """Mutable persistence model owned exclusively by ``WorkspaceStore``."""
@@ -85,6 +89,8 @@ class WorkspaceCommand:
     pending_action: dict[str, Any] | None = None
     affect_update: dict[str, float] | None = None
     command_source: str = "pipeline"
+    clear_focus: bool = False
+    clear_pending_action: bool = False
 
 
 @dataclass

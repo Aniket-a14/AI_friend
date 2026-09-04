@@ -13,7 +13,11 @@ from app.state.session_state import (
     load_session_state,
     persist_session_state,
 )
-from app.state.workspace import StaleWorkspaceError, WorkspaceCommand
+from app.state.workspace import (
+    StaleWorkspaceError,
+    WorkspaceCommand,
+    WorkspaceDivergenceError,
+)
 from app.state.workspace_store import SQLiteWorkspaceStore
 
 
@@ -128,6 +132,38 @@ async def test_workspace_cas_stale_revision_rejected():
 
 
 @pytest.mark.asyncio
+async def test_workspace_command_can_clear_focus_and_pending_action():
+    """Terminal transitions must be able to clear fields, not only retain them."""
+    store = SQLiteWorkspaceStore(":memory:")
+    try:
+        initial = await store.get_snapshot("session-a")
+        populated = await store.commit_transition(
+            WorkspaceCommand(
+                "session-a",
+                initial.epoch,
+                initial.revision,
+                focus_update="active turn",
+                pending_action={"action_intent": {"id": "intent-1"}},
+            )
+        )
+
+        cleared = await store.commit_transition(
+            WorkspaceCommand(
+                "session-a",
+                populated.epoch,
+                populated.revision,
+                clear_focus=True,
+                clear_pending_action=True,
+            )
+        )
+
+        assert cleared.focus is None
+        assert cleared.pending_action is None
+    finally:
+        await store.close()
+
+
+@pytest.mark.asyncio
 async def test_workspace_epoch_increment_rejects_prior_epoch(tmp_path):
     """A restarted owner must fence commands retained by the prior process."""
     db_path = tmp_path / "workspace.db"
@@ -144,6 +180,7 @@ async def test_workspace_epoch_increment_rejects_prior_epoch(tmp_path):
                 focus_update="unfinished work",
                 add_goals=["resume me"],
                 pending_action={"intent_id": "intent-1"},
+                affect_update={"valence": 0.5, "arousal": 0.8},
             )
         )
         stale_command = WorkspaceCommand(
@@ -160,6 +197,7 @@ async def test_workspace_epoch_increment_rejects_prior_epoch(tmp_path):
         assert restarted.focus == "unfinished work"
         assert restarted.active_goals == ["resume me"]
         assert restarted.pending_action == {"intent_id": "intent-1"}
+        assert restarted.affect_snapshot == {"valence": 0.5, "arousal": 0.8}
         assert restarted.last_percept_id == "percept-before-restart"
         with pytest.raises(StaleWorkspaceError, match="epoch is stale"):
             await prior_store.commit_transition(stale_command)
@@ -167,6 +205,26 @@ async def test_workspace_epoch_increment_rejects_prior_epoch(tmp_path):
     finally:
         await prior_store.close()
         await restarted_store.close()
+
+
+@pytest.mark.asyncio
+async def test_workspace_epoch_metadata_divergence_is_typed_as_stale():
+    """Epoch metadata corruption must remain catchable as a stale workspace error."""
+    store = SQLiteWorkspaceStore(":memory:")
+    try:
+        await store.get_snapshot("session-a")
+        with store._lock:
+            store._connection.execute(
+                "UPDATE workspace_epoch SET current_epoch = 2 WHERE session_id = ?",
+                ("session-a",),
+            )
+            store._connection.commit()
+
+        with pytest.raises(WorkspaceDivergenceError):
+            await store.get_snapshot("session-a")
+        assert issubclass(WorkspaceDivergenceError, StaleWorkspaceError)
+    finally:
+        await store.close()
 
 
 @pytest.mark.asyncio
@@ -367,5 +425,122 @@ async def test_session_state_dual_write_flag_on_round_trips_workspace(monkeypatc
         transitions = await workspace_store.list_transitions("conversation-a")
         assert len(transitions) == 1
         assert transitions[0].command_source == "session_state.dual_write"
+    finally:
+        await workspace_store.close()
+
+
+@pytest.mark.asyncio
+async def test_session_state_dual_write_preserves_existing_action_intent(monkeypatch):
+    """Mirroring legacy state must not erase the authoritative action namespace."""
+    monkeypatch.setattr(Config, "WORKSPACE_AUTHORITATIVE", True, raising=False)
+    legacy_store = _MemorySessionStore()
+    workspace_store = SQLiteWorkspaceStore(":memory:")
+    try:
+        initial = await workspace_store.get_snapshot("conversation-a")
+        await workspace_store.commit_transition(
+            WorkspaceCommand(
+                "conversation-a",
+                initial.epoch,
+                initial.revision,
+                pending_action={"action_intent": {"id": "intent-1"}},
+            )
+        )
+        session_state = SessionState.start_turn("turn-a", "utterance-a")
+
+        await persist_session_state(
+            legacy_store,
+            session_state,
+            workspace_store,
+            workspace_session_id="conversation-a",
+        )
+
+        snapshot = await workspace_store.get_snapshot("conversation-a")
+        assert snapshot.pending_action == {
+            "action_intent": {"id": "intent-1"},
+            "legacy_session_state": session_state.to_dict(),
+        }
+    finally:
+        await workspace_store.close()
+
+
+@pytest.mark.asyncio
+async def test_session_state_dual_write_retries_after_cas_race(monkeypatch):
+    """A concurrent workspace writer must be retried before legacy fallback."""
+    monkeypatch.setattr(Config, "WORKSPACE_AUTHORITATIVE", True, raising=False)
+
+    class _RaceOnceWorkspaceStore:
+        def __init__(self, inner: SQLiteWorkspaceStore) -> None:
+            self.inner = inner
+            self.get_count = 0
+            self.commit_count = 0
+            self.raced = False
+
+        async def get_snapshot(self, session_id: str):
+            self.get_count += 1
+            return await self.inner.get_snapshot(session_id)
+
+        async def commit_transition(self, command: WorkspaceCommand):
+            self.commit_count += 1
+            if not self.raced:
+                self.raced = True
+                current = await self.inner.get_snapshot(command.session_id)
+                await self.inner.commit_transition(
+                    WorkspaceCommand(
+                        command.session_id,
+                        current.epoch,
+                        current.revision,
+                        pending_action={"action_intent": {"id": "intent-1"}},
+                        command_source="test.concurrent-writer",
+                    )
+                )
+                raise StaleWorkspaceError("simulated CAS race")
+            return await self.inner.commit_transition(command)
+
+    legacy_store = _MemorySessionStore()
+    inner_store = SQLiteWorkspaceStore(":memory:")
+    workspace_store = _RaceOnceWorkspaceStore(inner_store)
+    session_state = SessionState.start_turn("turn-a", "utterance-a")
+    try:
+        await persist_session_state(
+            legacy_store,
+            session_state,
+            workspace_store,
+            workspace_session_id="conversation-a",
+        )
+
+        snapshot = await inner_store.get_snapshot("conversation-a")
+        assert workspace_store.get_count == 2
+        assert workspace_store.commit_count == 2
+        assert snapshot.revision == 2
+        assert snapshot.pending_action == {
+            "action_intent": {"id": "intent-1"},
+            "legacy_session_state": session_state.to_dict(),
+        }
+        assert legacy_store.values["session_state"] == session_state.to_dict()
+    finally:
+        await inner_store.close()
+
+
+@pytest.mark.asyncio
+async def test_session_state_workspace_fallback_uses_stable_id_and_warns(
+    monkeypatch, caplog
+):
+    """Missing IDs must be visible and must not create one workspace per turn."""
+    monkeypatch.setattr(Config, "WORKSPACE_AUTHORITATIVE", True, raising=False)
+    legacy_store = _MemorySessionStore()
+    workspace_store = SQLiteWorkspaceStore(":memory:")
+    try:
+        with caplog.at_level("WARNING", logger="app.state.session_state"):
+            first = SessionState.start_turn("turn-a")
+            second = SessionState.start_turn("turn-b")
+            await persist_session_state(legacy_store, first, workspace_store)
+            await persist_session_state(legacy_store, second, workspace_store)
+
+        assert caplog.text.count("workspace_session_id was not supplied") == 2
+        stable = await workspace_store.get_snapshot("default")
+        assert stable.revision == 2
+        assert stable.focus == "turn-b"
+        assert await workspace_store.list_transitions("turn-a") == []
+        assert await workspace_store.list_transitions("turn-b") == []
     finally:
         await workspace_store.close()
