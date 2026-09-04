@@ -16301,3 +16301,39 @@ full local NATS-enabled suite remain outside this scoped worktree fix round.
 - Empirical results documented in `orchestration/PHASE_03/BENCHMARK_RESULTS.md`.
 
 **NOT done:** Phase 04 implementation (Multi-Modal Sensory & Somatic Integration) has not started.
+
+## 2026-09-04 -- Codex Phase 04 Package A: social state and calibration
+
+Changed files:
+
+- `backend/app/state/person_model.py`
+- `backend/app/cognitive/calibration.py`
+- `backend/app/state/agent_state.py`
+- `backend/tests/test_social_metacognition.py`
+- `orchestration/PHASE_04/CODEX_RESULT.md`
+
+Behavior changes:
+
+- Added PersonModel with per-person knowledge and disclosure records, separate
+  competence and benevolence trust from reliance outcomes, asymmetric
+  rupture/repair trajectories, and strict private-fact ownership isolation.
+- Added incremental domain Brier calibration and deterministic metacognitive
+  directives for proceeding, hedging, clarification, verification, and
+  abstention.
+- AgentState now holds person-indexed social state and a capability model.
+  StateService applies active-person updates under its state lock and mirrors
+  competence/benevolence to legacy scalar fields for existing callers.
+
+Verification:
+
+- Focused social/metacognition suite: 12/12 passed.
+- Focused social plus state and Phase 3 regressions: 36 tests, zero failures
+  and zero errors in JUnit XML.
+- Ruff passed repository-wide; Radon reported no D-or-higher app functions.
+- ASCII byte scans and `git diff --check` passed.
+- Mutating the rupture multiplier from 1.5 to 0.5 made the asymmetry test fail;
+  the required behavior was restored.
+
+**NOT done:** Persistent person-model storage, broader outcome-event wiring,
+action runtime integration, GPU validation, remote CI, merge, and push remain
+outside this Package A scope.
