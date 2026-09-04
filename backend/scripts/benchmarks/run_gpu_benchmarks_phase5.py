@@ -95,13 +95,15 @@ async def run_bm_gpu_p5_01(base_url: str = "http://127.0.0.1:11434") -> dict[str
         client = OllamaClient(base_url=base_url, model=model_tag)
 
         # Check capability negotiation for role
-        qualified, strategy, details = negotiator.negotiate_role(ModelRole.REALIZATION, model_tag)
         qualified, strategy, _details = negotiator.negotiate_role(ModelRole.REALIZATION, model_tag)
         print(f"Role REALIZATION Negotiation: qualified={qualified}, strategy={strategy}")
 
         # Reset model state and warm up
         _reset_model_state(base_url=base_url, model=model_tag)
-        async for _ in client.generate_stream("warmup", system="You are AI Friend."):
+        await asyncio.sleep(1.0)
+        async for _ in client.generate_stream("warmup 1", system="You are AI Friend."):
+            pass
+        async for _ in client.generate_stream("warmup 2", system="You are AI Friend."):
             pass
 
         ttfts_ms: list[float] = []
@@ -217,8 +219,6 @@ async def run_bm_gpu_p5_02(base_url: str = "http://127.0.0.1:11434") -> dict[str
 
             # 3. Voice Compilation
             t0 = time.perf_counter()
-            p_eleven, loss_eleven = eleven_compiler.compile(intent)
-            p_gpt, loss_gpt = gpt_compiler.compile(intent)
             _p_eleven, _loss_eleven = eleven_compiler.compile(intent)
             _p_gpt, _loss_gpt = gpt_compiler.compile(intent)
             t1 = time.perf_counter()
