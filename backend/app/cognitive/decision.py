@@ -10,6 +10,7 @@ Intent persistence uses temporal smoothing (§3.2):
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -76,6 +77,85 @@ _WAIT_FALLBACK_SCORE = 0.1
 # 0.225) it already exceeds 0.5, and it only grows with relevance.
 _ASK_BASE_SCORE = 0.6
 _ASK_RELEVANCE_BONUS = 0.3
+
+# Fix round (Codex review B3): common, low-signal words filtered out of a
+# turn's content before it is treated as a set of proposed topic claims --
+# without this every SPEAK candidate would carry claims like "you"/"have"/
+# "the" that trivially word-boundary-match all manner of unrelated
+# forbidden claims.
+_TOPIC_STOPWORDS = frozenset(
+    {
+        "a", "an", "the", "do", "does", "did", "you", "your", "yours", "im",
+        "is", "are", "am", "to", "of", "in", "on", "and", "or", "have",
+        "has", "had", "that", "this", "it", "what", "how", "why", "who",
+        "when", "can", "could", "will", "would", "should", "with", "for",
+        "me", "my", "mine", "we", "us", "our", "be", "been", "being",
+        "was", "were", "not", "no", "yes", "but", "so", "just", "really",
+    }
+)
+_TOPIC_WORD_PATTERN = re.compile(r"[A-Za-z']+")
+# ASK proposes a request for clarification, never an assertion about a
+# forbidden topic -- a fixed, generic claim rather than an empty list, so
+# filter_constraints has something to evaluate for every generated
+# candidate (Codex review B3's core complaint), not only for SPEAK.
+_ASK_CONSTRAINT_CLAIM = "request_clarification"
+
+
+def _extract_topic_claims(text: str) -> list[str]:
+    """Deterministic, LLM-free proxy for "what a SPEAK response engaging
+    with this turn might claim or discuss": the turn's own significant
+    words, lowercased, stopword-filtered, and deduplicated in order of
+    first appearance.
+
+    This is not natural-language understanding of what the eventual
+    response will actually say -- it is a conservative pre-generation
+    signal so `filter_constraints` has real, content-derived claims to
+    evaluate before Stage 8 generates anything (Codex review B3), rather
+    than an empty list that let every candidate through unfiltered. A
+    forbidden-boundary word appearing in the user's own turn is treated as
+    reason enough to make the corresponding SPEAK candidate contest that
+    boundary; it is deliberately cautious rather than semantically precise.
+    """
+    words = (match.group(0).lower() for match in _TOPIC_WORD_PATTERN.finditer(text))
+    seen: set[str] = set()
+    claims: list[str] = []
+    for word in words:
+        if len(word) <= 2 or word in _TOPIC_STOPWORDS or word in seen:
+            continue
+        seen.add(word)
+        claims.append(word)
+    return claims
+
+
+_CLARIFY_OUTCOME_PREFIX = "clarify:"
+
+
+def _clarification_subject_from_candidate(selected_candidate: dict[str, Any]) -> str:
+    """Recover the human-readable clarification subject an ASK candidate's
+    `predicted_outcomes` was built with (see `_build_candidates`), from the
+    plain dict `ActionCandidate.model_dump()` produces -- `selected_candidate`
+    on `BehaviorDecision` is a dict, not the original `ActionCandidate`
+    instance, since it must survive `.model_dump()` for the `ActionIntent`
+    trace (`pipeline.py::_commit_action_intent`)."""
+    for outcome in selected_candidate.get("predicted_outcomes", []):
+        if isinstance(outcome, str) and outcome.startswith(_CLARIFY_OUTCOME_PREFIX):
+            subject = outcome[len(_CLARIFY_OUTCOME_PREFIX) :].strip()
+            return subject or "that"
+    return "that"
+
+
+def _clarification_subject(activation: MemoryActivation) -> str:
+    """Best-effort human-readable label for what an ASK candidate wants
+    clarified, drawn from whatever structured_value happens to carry --
+    MemoryActivation.structured_value has no fixed schema across record
+    types, so this degrades to a generic label rather than raising when a
+    caller's structured_value omits every field it checks."""
+    value = activation.structured_value or {}
+    for key in ("summary", "subject", "topic", "description"):
+        candidate = value.get(key)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    return "that"
 
 
 def _bucket_relational_stance(trust: float, attachment: float, mood: float) -> str:
@@ -682,22 +762,38 @@ class DecisionService:
         goal = event.metadata.get("suggested_goal", "ENGAGE")
         intent = _build_communicative_intent(event, blackboard)
         behavior_decision = BehaviorDecision(intent=intent)
+        action_type = "RESPOND_CHAT"
+        clarification_subject: str | None = None
 
         if Config.PHASE_02_MEMORY_TRUTH:
             memory_activations = blackboard.get("memory_activations") or []
             behavior_decision = self._select_action_candidate(
-                behavior_decision, goal, memory_activations
+                behavior_decision, goal, memory_activations, event.raw_content
             )
+            selected = behavior_decision.selected_candidate
+            if selected and selected.get("kind") == "ASK":
+                # Fix round (Codex review B2): carry the selected kind into
+                # the *executable* plan, not only the ActionIntent trace --
+                # otherwise Stage 8 dispatches on action_type alone and an
+                # ASK selection silently realizes as ordinary chat.
+                action_type = "CLARIFY"
+                clarification_subject = _clarification_subject_from_candidate(
+                    selected
+                )
+
+        payload = {
+            "message": event.raw_content,
+            "emotion_state": blackboard["state"]["emotion"],
+            "model": event.metadata.get("preferred_model"),
+            "surfaced_memories": event.metadata.get("surfaced_memories", []),
+        }
+        if clarification_subject is not None:
+            payload["clarification_subject"] = clarification_subject
 
         blackboard["plan"] = ActionPlan(
-            action_type="RESPOND_CHAT",
+            action_type=action_type,
             goal=goal,
-            payload={
-                "message": event.raw_content,
-                "emotion_state": blackboard["state"]["emotion"],
-                "model": event.metadata.get("preferred_model"),
-                "surfaced_memories": event.metadata.get("surfaced_memories", []),
-            },
+            payload=payload,
             priority=1,
             behavior_decision=behavior_decision,
         )
@@ -707,24 +803,28 @@ class DecisionService:
         self,
         goal: str,
         memory_activations: list[MemoryActivation],
-        forbidden_claims: list[str],
+        raw_content: str,
     ) -> list[ActionCandidate]:
         """Phase 02 Package B: the candidate set decide() evaluates for a
         social-response turn. Always includes a SPEAK baseline and a WAIT
-        fallback (unconstrained, so filter_constraints can never empty the
-        set entirely); adds an ASK candidate when active memory disputes
-        what the turn would otherwise assert. `forbidden_claims` is accepted
-        for symmetry with filter_constraints and future candidate sources
-        that derive constraint_claims from it; today's builder does not
-        attach any, so it is currently unused here.
+        fallback (constraint_claims empty, so filter_constraints can never
+        empty the set entirely); adds an ASK candidate when active memory
+        disputes what the turn would otherwise assert.
+
+        Fix round (Codex review B3): SPEAK and ASK now carry real
+        constraint_claims -- SPEAK from `_extract_topic_claims(raw_content)`
+        (see that function's docstring for what this heuristic is and is
+        not), ASK from the fixed `_ASK_CONSTRAINT_CLAIM` label -- so
+        `filter_constraints` has something to evaluate instead of an empty
+        list on every generated candidate.
         """
-        del forbidden_claims  # reserved for future constraint-aware candidates
         candidates = [
             ActionCandidate(
                 candidate_id="cand-speak-default",
                 kind="SPEAK",
                 source="policy",
                 target_goal_ids=[goal],
+                constraint_claims=_extract_topic_claims(raw_content),
                 score=_SPEAK_BASELINE_SCORE,
             ),
             ActionCandidate(
@@ -751,6 +851,10 @@ class DecisionService:
                     source="memory_activation",
                     target_goal_ids=[goal],
                     evidence_ids=[most_relevant.record_id],
+                    constraint_claims=[_ASK_CONSTRAINT_CLAIM],
+                    predicted_outcomes=[
+                        f"clarify:{_clarification_subject(most_relevant)}"
+                    ],
                     score=_ASK_BASE_SCORE
                     + _ASK_RELEVANCE_BONUS * most_relevant.relevance_score,
                 )
@@ -762,6 +866,7 @@ class DecisionService:
         behavior_decision: BehaviorDecision,
         goal: str,
         memory_activations: list[MemoryActivation],
+        raw_content: str,
     ) -> BehaviorDecision:
         """Phase 02 Package B: constraint-first candidate generation and
         selection for one social-response turn. Returns a copy of
@@ -771,7 +876,7 @@ class DecisionService:
         outage.
         """
         forbidden_claims = list(self._immutable_core().get("boundaries", []))
-        candidates = self._build_candidates(goal, memory_activations, forbidden_claims)
+        candidates = self._build_candidates(goal, memory_activations, raw_content)
 
         survivors = self._candidate_selector.filter_constraints(
             candidates, forbidden_claims

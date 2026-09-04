@@ -13,6 +13,7 @@ orchestration/PHASE_02/CLAUDE_TASK.md's file ownership split.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any, Literal
 
@@ -50,16 +51,45 @@ def new_candidate_id() -> str:
     return f"cand-{uuid.uuid4().hex}"
 
 
+def _phrase_in_text(phrase: str, text: str) -> bool:
+    """Whole-word, case-insensitive containment: `phrase` must appear in
+    `text` bounded by word edges on both sides, not merely as a character
+    run. Regex-escaped so a phrase containing punctuation is matched
+    literally rather than as a pattern.
+
+    This is what makes "body" not match inside "somebody" (Codex review
+    finding B6): `\\bbody\\b` requires a non-word boundary immediately
+    before "body", and "somebody" has "m" there, so the boundary never
+    forms. A short single-word phrase like "body" still correctly matches
+    "physical body" (a boundary exists on both sides of "body" there).
+    """
+    if not phrase:
+        return False
+    pattern = r"\b" + re.escape(phrase) + r"\b"
+    return re.search(pattern, text, re.IGNORECASE) is not None
+
+
 def _claims_overlap(claim: str, forbidden: str) -> bool:
-    """Case-insensitive containment in either direction: a candidate claim
-    of "romantic escalation" is caught by a forbidden claim of "romantic",
-    and a candidate claim that repeats a forbidden claim verbatim is caught
-    too."""
-    claim_n = claim.strip().lower()
-    forbidden_n = forbidden.strip().lower()
+    """Word-boundary phrase containment in either direction: a candidate
+    claim of "physical body" is caught by a forbidden claim of "never claim
+    to have a physical body" (the shorter phrase found whole inside the
+    longer one), and vice versa for a shorter forbidden claim inside a
+    longer candidate claim. Fixed from Codex review finding B6: the prior
+    bidirectional *substring* check (`c in f or f in c`) matched "body"
+    inside "somebody", a false positive raw character containment cannot
+    avoid. Word-boundary matching is a narrower, sound relation than that,
+    though it still cannot catch a lexically different but semantically
+    equivalent claim (e.g. "boyfriend" against a forbidden "romantic
+    relationship" claim) -- that requires a structured claim-identifier
+    taxonomy, out of scope for this fix.
+    """
+    claim_n = claim.strip()
+    forbidden_n = forbidden.strip()
     if not claim_n or not forbidden_n:
         return False
-    return claim_n in forbidden_n or forbidden_n in claim_n
+    if claim_n.lower() == forbidden_n.lower():
+        return True
+    return _phrase_in_text(claim_n, forbidden_n) or _phrase_in_text(forbidden_n, claim_n)
 
 
 class CandidateSelector:

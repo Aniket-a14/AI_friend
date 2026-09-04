@@ -30,6 +30,7 @@ from .appraisal import AppraisalEngine, AppraisalVector
 from .decision import DecisionService
 from .identity import IdentityManager
 from .learning import ReflectionService
+from .memory_activation import MemoryActivation
 from .percept import PerceptEnvelope
 from .perception import PerceptionService
 from .pipeline import CognitivePipeline, WorkspaceSnapshotLike
@@ -412,6 +413,7 @@ class CognitiveService:
         raw_event: dict[str, Any],
         percept: PerceptEnvelope | None = None,
         workspace: WorkspaceSnapshotLike | None = None,
+        memory_activations: list[MemoryActivation] | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """
         Mesh-aware wrapper for the pure CognitivePipeline.
@@ -423,6 +425,18 @@ class CognitiveService:
         Stage 6's `ActionIntent` commitment that dropped them on the floor,
         so every production turn committed against the `(0, 0)` fallback
         tuple regardless of the real workspace revision.
+
+        `memory_activations` (Phase 02 Package B, fix round -- Codex review
+        B1) is likewise forwarded unchanged. This wrapper still has no
+        typed-retrieval integration of its own to build them from, so a
+        caller that has one (a future real retrieval integration) can pass
+        it directly; a caller that does not (every production caller today)
+        leaves it `None`, and `CognitivePipeline.execute` adapts
+        `self.surfaced_memories` -- the legacy memory dicts this wrapper
+        already collects -- into `MemoryActivation` tokens itself whenever
+        `Config.PHASE_02_MEMORY_TRUTH` is on, so a real production turn no
+        longer calls `DecisionService.decide(..., memory_activations=None)`
+        unconditionally the way it did before this fix.
         """
         event_metadata = raw_event.get("metadata", {})
         latency_metadata = (
@@ -436,6 +450,7 @@ class CognitiveService:
             surfaced_memories=self.surfaced_memories,
             percept=percept,
             workspace=workspace,
+            memory_activations=memory_activations,
         ):
             if output["type"] == "mesh_signal":
                 subject = output["subject"]

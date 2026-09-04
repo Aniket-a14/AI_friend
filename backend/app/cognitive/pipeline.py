@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import math
 from collections.abc import AsyncGenerator
@@ -10,7 +11,7 @@ from ..persona.policy import PersonaPolicy
 from ..state.session_state import SessionState, persist_session_state
 from .action_intent import ActionIntent, ActionKind, build_action_intent
 from .behavior_contracts import BehaviorDecision
-from .memory_activation import MemoryActivation
+from .memory_activation import MemoryActivation, memories_to_activations
 from .percept import PerceptEnvelope
 
 logger = logging.getLogger(__name__)
@@ -462,8 +463,40 @@ class CognitivePipeline:
     # both map to SPEAK; only the reflection path produces no speech at all.
     _ACTION_KIND_BY_TYPE: dict[str, ActionKind] = {
         "BACKGROUND_CONSOLIDATION": "REFLECT",
+        # Reachable only as a defensive fallback: decision.py never sets
+        # action_type="CLARIFY" without also setting a selected_candidate
+        # of kind "ASK", which _derive_action_kind reads first below.
+        "CLARIFY": "ASK",
     }
     _VALID_ACTION_KINDS: frozenset[str] = frozenset(get_args(ActionKind))
+
+    def _decision_accepts_memory_activations(self) -> bool:
+        """Fix round (Codex review B8): detect whether the injected decision
+        service can accept the memory_activations keyword before passing it,
+        so an existing DecisionService-compatible double (or a hand-written
+        test stub) with the pre-Phase-02 two-argument decide(event,
+        state_snapshot) signature is not broken by an unconditional third
+        argument. PLAN.md section 5's compatibility requirement applies to
+        every dependency-injection seam, not only the concrete
+        DecisionService this pipeline ships with.
+
+        A MagicMock/AsyncMock double -- no fixed signature, accepts
+        **kwargs by construction -- is treated as compatible, matching how
+        this codebase's own test suite already injects decision doubles.
+        """
+        try:
+            parameters = inspect.signature(self.decision.decide).parameters
+        except (TypeError, ValueError):
+            # No introspectable signature (e.g. some C-implemented or
+            # exotic callables) -- assume compatible rather than silently
+            # downgrading every such caller to the legacy call shape.
+            return True
+        if "memory_activations" in parameters:
+            return True
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
 
     def _derive_action_kind(self, plan) -> ActionKind:
         """Phase 02 Package B: when CandidateSelector picked a winner
@@ -613,6 +646,17 @@ class CognitivePipeline:
         event.metadata["session_state"] = session_state
         if event_metadata.get("speculative"):
             event.metadata["speculative"] = True
+        # Fix round (Codex review B1 - blocker): a production caller (the
+        # real CognitiveService.process_event() path) supplies
+        # surfaced_memories, not memory_activations -- without this adapter
+        # step, memory_activations stayed None on every real turn and the
+        # ASK/outage branches below were reachable only from a hand-built
+        # test argument, never from the application's own memory path. A
+        # caller that explicitly passes memory_activations (a future real
+        # retrieval integration, or a direct test) is never overridden here.
+        if Config.PHASE_02_MEMORY_TRUTH and memory_activations is None:
+            memory_activations = memories_to_activations(surfaced_memories)
+
         # Phase 02 Package B: only written when the flag is on and there is
         # something to report -- an untouched key when memory_activations is
         # empty/None keeps this a strict no-op for every Phase 1 caller.
@@ -659,9 +703,21 @@ class CognitivePipeline:
             event.metadata["surfaced_memories"] = surfaced_memories
         event.metadata["appraisal"] = appraisal_vector.to_dict()
 
-        plan = await self.decision.decide(
-            event, state_snapshot, memory_activations=memory_activations
-        )
+        if Config.PHASE_02_MEMORY_TRUTH and self._decision_accepts_memory_activations():
+            plan = await self.decision.decide(
+                event, state_snapshot, memory_activations=memory_activations
+            )
+        else:
+            # Fix round (Codex review B8): calling with the 3rd keyword
+            # unconditionally broke any injected DecisionService-compatible
+            # implementation or test double whose decide() predates this
+            # parameter -- a TypeError at the dependency-injection seam, not
+            # a Phase 02 behavior change. PLAN.md section 5 requires legacy
+            # behavior fully preserved while the flag is off; this also
+            # covers a flag-on decision object that simply has not been
+            # updated yet, rather than assuming every injected decision
+            # service is the concrete DecisionService.
+            plan = await self.decision.decide(event, state_snapshot)
 
         if self.reappraisal:
             self.reappraisal.record_pre_response_state(state_snapshot)

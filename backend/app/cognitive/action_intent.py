@@ -30,6 +30,13 @@ from pydantic import BaseModel, Field
 # Phase 02 Package B: widened to also accept the ActionCandidate kinds that
 # have no Phase 1 analogue (RETRIEVE, VERIFY, UPDATE_GOAL) -- a superset, so
 # every ActionIntent ever committed under Phase 1 remains a valid ActionKind.
+#
+# Fix round (Codex review B7): architecture section 22's full action-kind
+# set also includes UPDATE_STATE, EXTERNAL_ACT, and CONTINUE (INTERRUPT was
+# already present above). Adding them now, with no candidate generator or
+# executor wired to them yet, avoids a second incompatible widening later --
+# this Literal is a schema ceiling, not a claim that every kind is reachable
+# today.
 ActionKind = Literal[
     "SPEAK",
     "ASK",
@@ -40,6 +47,9 @@ ActionKind = Literal[
     "RETRIEVE",
     "VERIFY",
     "UPDATE_GOAL",
+    "UPDATE_STATE",
+    "EXTERNAL_ACT",
+    "CONTINUE",
 ]
 OutcomeStatus = Literal["COMPLETED", "TRUNCATED", "CANCELLED", "FAILED"]
 
