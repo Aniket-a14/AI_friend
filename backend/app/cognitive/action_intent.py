@@ -37,6 +37,14 @@ from pydantic import BaseModel, Field
 # executor wired to them yet, avoids a second incompatible widening later --
 # this Literal is a schema ceiling, not a claim that every kind is reachable
 # today.
+#
+# Phase 03 Package B: adds REAPPRAISE, REDIRECT_ATTENTION and
+# SUPPRESS_EXPRESSION -- emotion regulation actions (Architecture Sections
+# 9, 10, 21, 38), selectable candidates rather than silent affect
+# overwriting. REAPPRAISE and REDIRECT_ATTENTION have generators in
+# decision.py and executors in action.py; SUPPRESS_EXPRESSION is added to
+# the type now with neither wired up yet, same "schema ceiling, not a
+# reachability claim" reasoning as UPDATE_STATE/EXTERNAL_ACT/CONTINUE above.
 ActionKind = Literal[
     "SPEAK",
     "ASK",
@@ -50,6 +58,9 @@ ActionKind = Literal[
     "UPDATE_STATE",
     "EXTERNAL_ACT",
     "CONTINUE",
+    "REAPPRAISE",
+    "REDIRECT_ATTENTION",
+    "SUPPRESS_EXPRESSION",
 ]
 OutcomeStatus = Literal["COMPLETED", "TRUNCATED", "CANCELLED", "FAILED"]
 

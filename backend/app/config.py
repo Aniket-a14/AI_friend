@@ -231,6 +231,17 @@ class AppSettings(BaseSettings):
     # in and candidate-driven action selection has been verified end to end.
     PHASE_02_MEMORY_TRUTH: bool = False
 
+    # Phase 03 Package B: gates global-control scoring modulation and
+    # emotion-regulation candidate generation (REAPPRAISE,
+    # REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py. False
+    # (default during development) preserves exact pre-Phase-03 behavior --
+    # no regulation candidates are generated, decision.py never passes
+    # global_controls to score_and_select, and Stage 8 never dispatches to
+    # the new regulation executors. Flip once Package A's global_controls.py
+    # and appraisal.py are wired in and end-to-end regulation selection has
+    # been verified.
+    PHASE_03_AFFECT_CONTROL: bool = False
+
     # P1-1: the control tier's JetStream consumer settings (system.tick).
     # Both were previously implicit -- a 30s server-default ack_wait and
     # UNLIMITED max_deliver -- while the tick callback ran a ~28s

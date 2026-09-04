@@ -78,6 +78,24 @@ _WAIT_FALLBACK_SCORE = 0.1
 _ASK_BASE_SCORE = 0.6
 _ASK_RELEVANCE_BONUS = 0.3
 
+# Phase 03 Package B: acute distress thresholds for emotion-regulation
+# candidate generation (Architecture Sections 9, 10, 21, 38). Both must hold
+# together -- a strongly negative mood alone is ordinary low mood, not the
+# acute, aroused distress regulation candidates exist to interrupt.
+_DISTRESS_VALENCE_THRESHOLD = -0.5
+_DISTRESS_AROUSAL_THRESHOLD = 0.4
+
+# Regulation candidates score above the SPEAK baseline (0.5) so they can
+# actually win a distressed turn rather than only ever being generated and
+# rejected; REAPPRAISE outranks REDIRECT_ATTENTION as the more direct
+# response to acute distress, and the distress-specific WAIT sits below
+# both but still above the ordinary WAIT fallback (0.1) -- pausing is a
+# more deliberate choice under distress than the default safety floor.
+_REAPPRAISE_SCORE = 0.55
+_REDIRECT_ATTENTION_SCORE = 0.45
+_DISTRESS_WAIT_SCORE = 0.4
+_REGULATION_CONSTRAINT_CLAIM = "emotion_regulation_response"
+
 # Fix round (Codex review B3): common, low-signal words filtered out of a
 # turn's content before it is treated as a set of proposed topic claims --
 # without this every SPEAK candidate would carry claims like "you"/"have"/
@@ -156,6 +174,21 @@ def _clarification_subject(activation: MemoryActivation) -> str:
         if isinstance(candidate, str) and candidate.strip():
             return candidate.strip()
     return "that"
+
+
+def _is_acute_distress(state_snapshot: dict[str, Any]) -> bool:
+    """Severe negative valence plus high arousal (Architecture Sections 9,
+    10, 21, 38): the acute-distress condition emotion-regulation candidates
+    exist to catch. Reads the same state_snapshot keys _score_goals_maut
+    already reads (`mood` for valence, `energy` for arousal) rather than
+    inventing a second naming convention for the same fields.
+    """
+    valence = float(state_snapshot.get("mood", 0.0))
+    arousal = float(state_snapshot.get("energy", 0.5))
+    return (
+        valence < _DISTRESS_VALENCE_THRESHOLD
+        and arousal > _DISTRESS_AROUSAL_THRESHOLD
+    )
 
 
 def _bucket_relational_stance(trust: float, attachment: float, mood: float) -> str:
@@ -343,6 +376,7 @@ class DecisionService:
         event: CognitiveEvent,
         state_snapshot: dict[str, Any],
         memory_activations: list[MemoryActivation] | None = None,
+        global_controls: Any | None = None,
     ) -> ActionPlan:
         """Main decision loop with MAUT scoring and intent persistence.
 
@@ -350,6 +384,13 @@ class DecisionService:
         every caller that predates it keeps working unchanged, and its
         contents only influence the plan when Config.PHASE_02_MEMORY_TRUTH
         is True (see `_plan_social_response`).
+
+        `global_controls` (Phase 03 Package B, Architecture Sections 9, 10,
+        21) is likewise optional and additive: it only reaches
+        `CandidateSelector.score_and_select` when Config.PHASE_03_AFFECT_
+        CONTROL is True (see `_select_action_candidate`), and `state_
+        snapshot` (already a required parameter here) doubles as the
+        acute-distress signal for regulation-candidate generation.
         """
         # 0. Deterministic short-circuit -- zero LLM calls, before classification.
         if event.event_type == "USER_MESSAGE":
@@ -391,6 +432,7 @@ class DecisionService:
             "state": state_snapshot,
             "plan": None,
             "memory_activations": memory_activations or [],
+            "global_controls": global_controls,
         }
         status = await self.root.tick(blackboard)
 
@@ -765,13 +807,30 @@ class DecisionService:
         action_type = "RESPOND_CHAT"
         clarification_subject: str | None = None
 
-        if Config.PHASE_02_MEMORY_TRUTH:
+        # Fix round (Codex review M6 - medium): candidate selection used to
+        # be nested only under Config.PHASE_02_MEMORY_TRUTH, which made
+        # Config.PHASE_03_AFFECT_CONTROL operationally inert on its own --
+        # an operator who set only the Phase 03 flag (as its own config
+        # comment invites) got no modulation and no regulation candidates
+        # at all. Phase 03 depends on the candidate-selection machinery
+        # Phase 02 introduced, but that dependency must not be a second,
+        # undocumented flag gate: either flag alone now reaches this
+        # branch. `memory_activations` defaults to `[]` when Phase 02 is
+        # off (blackboard already normalizes it to `[]`, never `None`, so
+        # this is the exact legacy value Phase 02-off callers always saw).
+        if Config.PHASE_02_MEMORY_TRUTH or Config.PHASE_03_AFFECT_CONTROL:
             memory_activations = blackboard.get("memory_activations") or []
             behavior_decision = self._select_action_candidate(
-                behavior_decision, goal, memory_activations, event.raw_content
+                behavior_decision,
+                goal,
+                memory_activations,
+                event.raw_content,
+                state_snapshot=blackboard.get("state") or {},
+                global_controls=blackboard.get("global_controls"),
             )
             selected = behavior_decision.selected_candidate
-            if selected and selected.get("kind") == "ASK":
+            selected_kind = selected.get("kind") if selected else None
+            if selected_kind == "ASK":
                 # Fix round (Codex review B2): carry the selected kind into
                 # the *executable* plan, not only the ActionIntent trace --
                 # otherwise Stage 8 dispatches on action_type alone and an
@@ -780,6 +839,12 @@ class DecisionService:
                 clarification_subject = _clarification_subject_from_candidate(
                     selected
                 )
+            elif selected_kind in ("REAPPRAISE", "REDIRECT_ATTENTION"):
+                # Phase 03 Package B: same reasoning as the ASK/CLARIFY
+                # mapping above -- a selected regulation candidate must
+                # realize as its own action, not fall through to ordinary
+                # chat generation.
+                action_type = selected_kind
 
         payload = {
             "message": event.raw_content,
@@ -799,11 +864,57 @@ class DecisionService:
         )
         return True
 
+    def _build_regulation_candidates(self, goal: str) -> list[ActionCandidate]:
+        """Phase 03 Package B: REAPPRAISE / REDIRECT_ATTENTION / WAIT
+        candidates offered under acute distress (Architecture Sections 9,
+        10, 21, 38) -- additive to the ordinary social candidates
+        _build_candidates already generates, never a replacement for them.
+        Each carries a real constraint_claims entry so filter_constraints
+        has something to evaluate, same reasoning as the SPEAK/ASK claims
+        below (Codex review B3). Low risk/cost reflects that these are
+        short, low-commitment utterances relative to open-ended chat.
+        """
+        return [
+            ActionCandidate(
+                candidate_id="cand-reappraise-distress",
+                kind="REAPPRAISE",
+                source="regulation",
+                target_goal_ids=[goal],
+                constraint_claims=[_REGULATION_CONSTRAINT_CLAIM],
+                predicted_outcomes=["grounding_reflection"],
+                risk=0.1,
+                cost=0.2,
+                score=_REAPPRAISE_SCORE,
+            ),
+            ActionCandidate(
+                candidate_id="cand-redirect-distress",
+                kind="REDIRECT_ATTENTION",
+                source="regulation",
+                target_goal_ids=[goal],
+                constraint_claims=[_REGULATION_CONSTRAINT_CLAIM],
+                predicted_outcomes=["topic_pivot"],
+                risk=0.15,
+                cost=0.25,
+                score=_REDIRECT_ATTENTION_SCORE,
+            ),
+            ActionCandidate(
+                candidate_id="cand-wait-distress",
+                kind="WAIT",
+                source="regulation",
+                target_goal_ids=[goal],
+                constraint_claims=[_REGULATION_CONSTRAINT_CLAIM],
+                risk=0.0,
+                cost=0.0,
+                score=_DISTRESS_WAIT_SCORE,
+            ),
+        ]
+
     def _build_candidates(
         self,
         goal: str,
         memory_activations: list[MemoryActivation],
         raw_content: str,
+        state_snapshot: dict[str, Any] | None = None,
     ) -> list[ActionCandidate]:
         """Phase 02 Package B: the candidate set decide() evaluates for a
         social-response turn. Always includes a SPEAK baseline and a WAIT
@@ -817,6 +928,13 @@ class DecisionService:
         not), ASK from the fixed `_ASK_CONSTRAINT_CLAIM` label -- so
         `filter_constraints` has something to evaluate instead of an empty
         list on every generated candidate.
+
+        Phase 03 Package B: `state_snapshot` is optional and additive --
+        `None` (every pre-Phase-03 caller) skips distress detection
+        entirely, matching exact prior behavior. When supplied and
+        `Config.PHASE_03_AFFECT_CONTROL` is True, acute distress
+        (`_is_acute_distress`) adds `_build_regulation_candidates`'s output
+        to the set below.
         """
         candidates = [
             ActionCandidate(
@@ -859,6 +977,14 @@ class DecisionService:
                     + _ASK_RELEVANCE_BONUS * most_relevant.relevance_score,
                 )
             )
+
+        if (
+            Config.PHASE_03_AFFECT_CONTROL
+            and state_snapshot is not None
+            and _is_acute_distress(state_snapshot)
+        ):
+            candidates.extend(self._build_regulation_candidates(goal))
+
         return candidates
 
     def _select_action_candidate(
@@ -867,6 +993,8 @@ class DecisionService:
         goal: str,
         memory_activations: list[MemoryActivation],
         raw_content: str,
+        state_snapshot: dict[str, Any] | None = None,
+        global_controls: Any | None = None,
     ) -> BehaviorDecision:
         """Phase 02 Package B: constraint-first candidate generation and
         selection for one social-response turn. Returns a copy of
@@ -874,9 +1002,19 @@ class DecisionService:
         alternatives (constraint-violating and lower-scoring alike), and
         whether any considered memory activation reported a retrieval
         outage.
+
+        Phase 03 Package B: `state_snapshot` feeds acute-distress detection
+        in `_build_candidates`; `global_controls` is forwarded to
+        `score_and_select` only when `Config.PHASE_03_AFFECT_CONTROL` is
+        True, so global-control modulation can never affect ranking while
+        the flag is off, matching this repo's existing PHASE_02_MEMORY_TRUTH
+        gating pattern. Both are optional and additive -- omitting them
+        reproduces exact prior behavior.
         """
         forbidden_claims = list(self._immutable_core().get("boundaries", []))
-        candidates = self._build_candidates(goal, memory_activations, raw_content)
+        candidates = self._build_candidates(
+            goal, memory_activations, raw_content, state_snapshot
+        )
 
         survivors = self._candidate_selector.filter_constraints(
             candidates, forbidden_claims
@@ -900,8 +1038,22 @@ class DecisionService:
             # defensive floor, not an expected path.
             survivors = [c for c in candidates if c.kind == "WAIT"] or candidates
 
+        # Fix round (Codex review B1 - blocker): `survivors` was already
+        # filtered above, so passing `forbidden_claims` here too is
+        # normally a no-op re-filter -- but it makes this call defend
+        # itself rather than relying solely on the pre-filtering above,
+        # which is exactly the gap the review found in the public selector
+        # API. It also converts the pathological "no WAIT candidate
+        # exists at all" fallback three lines up (which would otherwise
+        # silently re-admit a forbidden candidate) into a raised
+        # ValueError instead of a silent constraint violation.
         winner, score_rejected = self._candidate_selector.score_and_select(
-            survivors, active_goals=[goal]
+            survivors,
+            active_goals=[goal],
+            global_controls=(
+                global_controls if Config.PHASE_03_AFFECT_CONTROL else None
+            ),
+            forbidden_claims=forbidden_claims,
         )
 
         retrieval_degraded = any(

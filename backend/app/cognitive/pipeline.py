@@ -467,6 +467,11 @@ class CognitivePipeline:
         # action_type="CLARIFY" without also setting a selected_candidate
         # of kind "ASK", which _derive_action_kind reads first below.
         "CLARIFY": "ASK",
+        # Phase 03 Package B: same defensive-fallback reasoning as CLARIFY/
+        # ASK above -- decision.py never sets these action_types without
+        # also selecting a candidate of the matching kind.
+        "REAPPRAISE": "REAPPRAISE",
+        "REDIRECT_ATTENTION": "REDIRECT_ATTENTION",
     }
     _VALID_ACTION_KINDS: frozenset[str] = frozenset(get_args(ActionKind))
 
@@ -492,6 +497,24 @@ class CognitivePipeline:
             # downgrading every such caller to the legacy call shape.
             return True
         if "memory_activations" in parameters:
+            return True
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+
+    def _decision_accepts_global_controls(self) -> bool:
+        """Phase 03 Package B: same reasoning and shape as
+        `_decision_accepts_memory_activations`, for the `global_controls`
+        keyword this phase adds to `decide()` -- protects an injected
+        decision double or hand-written test stub whose `decide()` predates
+        this parameter from an unconditional keyword breaking it.
+        """
+        try:
+            parameters = inspect.signature(self.decision.decide).parameters
+        except (TypeError, ValueError):
+            return True
+        if "global_controls" in parameters:
             return True
         return any(
             parameter.kind is inspect.Parameter.VAR_KEYWORD
@@ -586,6 +609,15 @@ class CognitivePipeline:
         retrieval failure look identical to a real absence of memories, and
         threads the activations into `DecisionService.decide` so active
         memory can shift which `ActionCandidate` Stage 6 commits.
+
+        Phase 03 Package B (Sections 9, 10, 21, 38): when
+        `Config.PHASE_03_AFFECT_CONTROL` is True, this also reads a
+        `global_controls` value off `state_snapshot` (key "global_controls",
+        left `None` until Package A's global_controls.py populates it) and
+        threads it into `DecisionService.decide` so global controls can
+        modulate candidate scoring and acute distress can raise emotion-
+        regulation candidates. False (the default) preserves exact prior
+        behavior -- `global_controls` is never read or passed.
         """
         import time
 
@@ -703,21 +735,24 @@ class CognitivePipeline:
             event.metadata["surfaced_memories"] = surfaced_memories
         event.metadata["appraisal"] = appraisal_vector.to_dict()
 
+        # Fix round (Codex review B8): calling with a keyword unconditionally
+        # broke any injected DecisionService-compatible implementation or
+        # test double whose decide() predates that parameter -- a TypeError
+        # at the dependency-injection seam, not a behavior change. PLAN.md
+        # section 5 requires legacy behavior fully preserved while a flag is
+        # off; both checks also cover a flag-on decision object that simply
+        # has not been updated yet, rather than assuming every injected
+        # decision service is the concrete DecisionService. Phase 03 Package
+        # B adds the second kwarg the same way Phase 02 Package B added the
+        # first, so a decision double supporting only one of the two keeps
+        # working with just that one threaded through.
+        decide_kwargs: dict[str, Any] = {}
         if Config.PHASE_02_MEMORY_TRUTH and self._decision_accepts_memory_activations():
-            plan = await self.decision.decide(
-                event, state_snapshot, memory_activations=memory_activations
-            )
-        else:
-            # Fix round (Codex review B8): calling with the 3rd keyword
-            # unconditionally broke any injected DecisionService-compatible
-            # implementation or test double whose decide() predates this
-            # parameter -- a TypeError at the dependency-injection seam, not
-            # a Phase 02 behavior change. PLAN.md section 5 requires legacy
-            # behavior fully preserved while the flag is off; this also
-            # covers a flag-on decision object that simply has not been
-            # updated yet, rather than assuming every injected decision
-            # service is the concrete DecisionService.
-            plan = await self.decision.decide(event, state_snapshot)
+            decide_kwargs["memory_activations"] = memory_activations
+        if Config.PHASE_03_AFFECT_CONTROL and self._decision_accepts_global_controls():
+            decide_kwargs["global_controls"] = state_snapshot.get("global_controls")
+
+        plan = await self.decision.decide(event, state_snapshot, **decide_kwargs)
 
         if self.reappraisal:
             self.reappraisal.record_pre_response_state(state_snapshot)

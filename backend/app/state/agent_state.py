@@ -1,11 +1,11 @@
 """
-Agent State — PAD + Relational Framework (psychological_layer.md §2).
+Agent State -- PAD + Relational Framework (psychological_layer.md section2).
 
 Affective dimensions: Valence (V), Arousal (Ar), Dominance (D)
-  — Mehrabian & Russell (1974)
+  -- Mehrabian & Russell (1974)
 
 Relational dimensions: Trust (T), Attachment (At)
-  — Marsh (1994) for trust, Bowlby for attachment
+  -- Marsh (1994) for trust, Bowlby for attachment
 
 State updates: ALMA mood-pull + exponential decay (Gebhard, 2005)
 """
@@ -17,6 +17,7 @@ import math
 import os
 import sqlite3
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -29,6 +30,8 @@ from ..persona import PersonaProfile
 from ..utils.background_tasks import spawn_background
 
 if TYPE_CHECKING:
+    from ..cognitive.appraisal import AppraisalRecord
+    from ..cognitive.global_controls import GlobalControls
     from ..cognitive.tom import UserMentalModel
 
 
@@ -40,7 +43,7 @@ def _default_user_mental_model():
 
 logger = logging.getLogger(__name__)
 
-# Roadmap §C: recognising a somatic comfort fires a phasic dopamine burst of
+# Roadmap sectionC: recognising a somatic comfort fires a phasic dopamine burst of
 # this size. Kept here rather than in somatic.py because it is a property of the
 # endocrine response, not of visual recognition -- any future reward channel
 # (a warm reply, a resolved goal) should fire through the same mechanism.
@@ -59,7 +62,7 @@ class AgentState:
     # PAD Affective Dimensions (Mehrabian & Russell, 1974)
     mood: float = 0.0  # V (Valence): -1.0 to 1.0
     energy: float = 0.5  # Ar (Arousal): 0.0 to 1.0
-    dominance: float = 0.5  # D (Dominance): 0.0 to 1.0 — NEW
+    dominance: float = 0.5  # D (Dominance): 0.0 to 1.0 -- NEW
 
     # Relational Dimensions
     trust_benevolence: float = 0.5  # Tb (Marsh): 0.0 to 1.0
@@ -167,10 +170,10 @@ class AgentState:
         self.energy = value.get("arousal", self.energy)
         self.dominance = value.get("dominance", self.dominance)
 
-    # --- PAD Property Aliases (§2.1) ---
+    # --- PAD Property Aliases (section2.1) ---
     @property
     def valence(self) -> float:
-        """PAD Valence (V) — maps to 'mood'."""
+        """PAD Valence (V) -- maps to 'mood'."""
         return self.mood
 
     @valence.setter
@@ -179,7 +182,7 @@ class AgentState:
 
     @property
     def arousal(self) -> float:
-        """PAD Arousal (Ar) — maps to 'energy' + fatigue-induced restlessness
+        """PAD Arousal (Ar) -- maps to 'energy' + fatigue-induced restlessness
         plus any outstanding adrenaline.
 
         The adrenaline term (Bucket 11, voice remediation Phase 3, item 2) is
@@ -200,7 +203,7 @@ class AgentState:
 
     @property
     def trust(self) -> float:
-        """PAD Trust (T) — maps to average of Benevolence, Competence, and Integrity."""
+        """PAD Trust (T) -- maps to average of Benevolence, Competence, and Integrity."""
         return (
             self.trust_benevolence + self.trust_competence + self.trust_integrity
         ) / 3.0
@@ -297,8 +300,8 @@ class AgentState:
     def cortisol(self) -> float:
         """
         Stress hormone: tonic tone plus any decaying acute burst.
-        High cortisol → rigid/defensive behavior (low LLM temperature).
-        Low cortisol → relaxed/creative behavior (higher temperature).
+        High cortisol -> rigid/defensive behavior (low LLM temperature).
+        Low cortisol -> relaxed/creative behavior (higher temperature).
         Range: 0.0 (fully relaxed) to 1.0 (maximum stress).
 
         With no burst outstanding this is exactly the historical derived value,
@@ -330,7 +333,7 @@ class AgentState:
 
     @property
     def dopamine_tonic(self) -> float:
-        """Background reward tone: positive valence × arousal.
+        """Background reward tone: positive valence x arousal.
 
         This is the whole of what `dopamine` used to be. It tracks the ongoing
         affective state instantaneously and has no memory of its own.
@@ -356,8 +359,8 @@ class AgentState:
     def dopamine(self) -> float:
         """
         Reward hormone: tonic tone plus any decaying phasic burst.
-        High dopamine → exploratory/playful behavior (higher top_p).
-        Low dopamine → conservative/flat behavior (lower top_p).
+        High dopamine -> exploratory/playful behavior (higher top_p).
+        Low dopamine -> conservative/flat behavior (lower top_p).
         Range: 0.0 (no reward signal) to 1.0 (peak reward).
 
         With no burst outstanding this is exactly the historical derived value
@@ -369,7 +372,7 @@ class AgentState:
         """Fire a phasic burst, returning the new total dopamine level.
 
         Implements the roadmap's `D_t = min(1.0, D_{t-1} + amount)`
-        (`docs/FUTURE_FINETUNED_ADAPTER.md` §C) literally, which the previous
+        (`docs/FUTURE_FINETUNED_ADAPTER.md` sectionC) literally, which the previous
         derived-only property could not: with dopamine computed purely from
         valence and arousal there was no `D_{t-1}` to add to, and the only way
         to move it was to move mood itself.
@@ -494,6 +497,11 @@ class StateService:
         # A2: serializes short-term affect mutation so the fire-and-forget
         # System-2 semantic-drift task cannot clobber a fresher appraisal.
         self._state_lock = asyncio.Lock()
+        # Derived control state is immutable and replaced only while holding
+        # `_state_lock`. It is a read-only input for downstream consumers.
+        from ..cognitive.global_controls import GlobalControls
+
+        self._global_controls = GlobalControls()
         # Separate from `_state_lock` on purpose. This one serializes the *write
         # ordering* in `persist_state`, which now yields at each `to_thread`
         # dispatch; callers reach `persist_state` from methods already holding
@@ -520,7 +528,7 @@ class StateService:
 
         self._initialize_sqlite()
 
-        # --- Psychological Coefficients (§2.4) ---
+        # --- Psychological Coefficients (section2.4) ---
         # These are the agent's temperament, so they come from the persona rather
         # than from process-global config. `PersonaProfile.from_config()` reads
         # the same PSYCH_* settings as before, so an unconfigured deployment is
@@ -543,6 +551,34 @@ class StateService:
             Config, "STATE_SENSORY_PERSIST_INTERVAL", 2.0
         )
         self._last_sensory_persist = 0.0
+
+    def _refresh_global_controls_locked(
+        self, *, urgency: float = 0.0, prediction_error: float = 0.0
+    ) -> None:
+        """Derive and replace controls while the caller holds `_state_lock`."""
+        from ..cognitive.global_controls import derive_global_controls
+
+        self._global_controls = derive_global_controls(
+            {
+                "valence": self.current_state.valence,
+                "arousal": self.current_state.arousal,
+                "dominance": self.current_state.dominance,
+            },
+            load=self.current_state.fatigue,
+            urgency=urgency,
+            prediction_error=prediction_error,
+        )
+
+    def get_global_controls(self) -> "GlobalControls":
+        """Return the immutable control snapshot for action selection."""
+        controls = getattr(self, "_global_controls", None)
+        if controls is not None:
+            return controls
+        # Preserve the minimal `object.__new__(StateService)` construction used
+        # by persistence/lock audit tests without adding mutable control state.
+        from ..cognitive.global_controls import GlobalControls
+
+        return GlobalControls()
 
     def _initialize_sqlite(self):
         if self.db_path != ":memory:":
@@ -601,6 +637,10 @@ class StateService:
         logger.info(f"[State] Hydrating {agent_name} from Redis/SQLite...")
         async with self._state_lock:
             await self._hydrate_locked(agent_name)
+            # Lock audit harnesses replace `_hydrate_locked` on a partial
+            # service. A real service always has `current_state` here.
+            if hasattr(self, "current_state"):
+                self._refresh_global_controls_locked()
 
     async def _hydrate_locked(self, agent_name: str):
         # 1. Try Redis
@@ -841,7 +881,7 @@ class StateService:
                     and self.current_state.writer_id != ""
                 ):
                     # Two writers produced the same revision number -- a
-                    # design hazard §18 Experiment 3 measures, not resolved
+                    # design hazard section18 Experiment 3 measures, not resolved
                     # here. Applied anyway (rejecting would be just as
                     # arbitrary), but logged distinctly so it's visible.
                     logger.warning(
@@ -920,6 +960,7 @@ class StateService:
                 self.current_state.writer_id = data.get(
                     "writer_id", self.current_state.writer_id
                 )
+            self._refresh_global_controls_locked()
 
     async def persist_state(self, agent_name: str = "my friend"):
         """Save state to Redis and the local SQLite cache, then broadcast.
@@ -967,6 +1008,7 @@ class StateService:
                 "baseline_valence": self.current_state.baseline_valence,
                 "baseline_arousal": self.current_state.baseline_arousal,
                 "baseline_dominance": self.current_state.baseline_dominance,
+                "global_controls": self.get_global_controls().model_dump(),
             }
 
             # 1. Save to Redis
@@ -1137,17 +1179,71 @@ class StateService:
             if "dominance" in new_pad and new_pad["dominance"] is not None:
                 self.current_state.dominance = float(new_pad["dominance"])
             self._enforce_bounds()
+            self._refresh_global_controls_locked()
+
+    async def apply_affect_delta(
+        self,
+        affect_delta: Mapping[str, float],
+        *,
+        urgency: float = 0.0,
+        prediction_error: float = 0.0,
+    ) -> "GlobalControls":
+        """Apply one appraisal delta and refresh controls atomically.
+
+        The method owns only PAD affect and the derived control snapshot. It
+        deliberately has no reference to memory, beliefs, evidence, identity,
+        provenance, or safety state, which preserves content isolation.
+        """
+
+        def delta_for(*names: str) -> float:
+            for name in names:
+                value = affect_delta.get(name)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    return float(value)
+            return 0.0
+
+        async with self._state_lock:
+            self.current_state.valence += delta_for("pleasure", "valence")
+            self.current_state.energy += delta_for("arousal")
+            self.current_state.dominance += delta_for("dominance")
+            self._enforce_bounds()
+            self._refresh_global_controls_locked(
+                urgency=urgency, prediction_error=prediction_error
+            )
+            return self._global_controls
+
+    async def appraise_and_apply_event(
+        self,
+        event_metadata: dict[str, Any],
+        active_goals: list[str],
+        expectation: float = 0.0,
+    ) -> tuple["AppraisalRecord", "GlobalControls"]:
+        """Appraise one event and atomically apply its genuine control inputs.
+
+        The appraisal reducer remains pure. This bridge owns the stateful step,
+        using goal incongruence as urgency and novelty as prediction error
+        instead of substituting the legacy relevance proxy for either signal.
+        """
+        from ..cognitive.appraisal import appraise_event
+
+        appraisal = appraise_event(event_metadata, active_goals, expectation)
+        controls = await self.apply_affect_delta(
+            appraisal.affect_delta,
+            urgency=max(0.0, -appraisal.goal_congruence),
+            prediction_error=appraisal.novelty,
+        )
+        return appraisal, controls
 
     async def update_from_appraisal(
         self, appraisal, weights: dict[str, float] | None = None
     ):
         """
-        PAD + Relational update driven by appraisal vector (§2.3).
+        PAD + Relational update driven by appraisal vector (section2.3).
 
         ALMA mood-pull: Each appraisal dimension pulls the corresponding
         PAD dimension toward the appraised value.
         Marsh trust: RI directly modulates trust.
-        Bowlby attachment: Trust × interaction frequency.
+        Bowlby attachment: Trust x interaction frequency.
         """
         G = appraisal.goal_congruence
         RI = appraisal.relationship_impact
@@ -1167,7 +1263,7 @@ class StateService:
         w6 = weights.get("w6_na_to_d", 0.4)
 
         async with self._state_lock:
-            # PAD mood-pull (§2.3)
+            # PAD mood-pull (section2.3)
             self.current_state.mood = (
                 1 - self.alpha
             ) * self.current_state.mood + self.alpha * (w1 * G + w2 * RI)
@@ -1178,7 +1274,7 @@ class StateService:
                 1 - self.gamma
             ) * self.current_state.dominance + self.gamma * (w5 * A + w6 * NA)
 
-            # Relational updates (§2.3)
+            # Relational updates (section2.3)
             self.current_state.trust_benevolence = max(
                 0.0, min(1.0, self.current_state.trust_benevolence + self.delta * RI)
             )
@@ -1206,6 +1302,9 @@ class StateService:
 
             self.current_state.last_update = datetime.now()
             self._enforce_bounds()
+            self._refresh_global_controls_locked(
+                urgency=R, prediction_error=N
+            )
         await self.persist_state()
 
         logger.debug(
@@ -1224,23 +1323,27 @@ class StateService:
         Legacy Cognitive Update (backward-compatible).
         Wraps the new appraisal-driven update for code that still uses valence floats.
         """
-        now = datetime.now()
-        self.current_state.last_user_interaction = time.time()
+        async with self._state_lock:
+            now = datetime.now()
+            self.current_state.last_user_interaction = time.time()
 
-        # Apply Cognitive Weight (0.7)
-        self.current_state.mood = (self.current_state.mood * 0.3) + (
-            event_valence * 0.7
-        )
+            # Apply Cognitive Weight (0.7)
+            self.current_state.mood = (self.current_state.mood * 0.3) + (
+                event_valence * 0.7
+            )
 
-        self.current_state.trust = max(
-            0.0, min(1.0, self.current_state.trust + user_trust_delta)
-        )
-        self.current_state.attachment += user_trust_delta * 0.1
-        self.current_state.energy -= 0.02
+            self.current_state.trust = max(
+                0.0, min(1.0, self.current_state.trust + user_trust_delta)
+            )
+            self.current_state.attachment += user_trust_delta * 0.1
+            self.current_state.energy -= 0.02
 
-        self.current_state.interaction_count += 1
-        self.current_state.last_update = now
-        self._enforce_bounds()
+            self.current_state.interaction_count += 1
+            self.current_state.last_update = now
+            self._enforce_bounds()
+            self._refresh_global_controls_locked(
+                prediction_error=abs(event_valence)
+            )
         await self.persist_state()
 
     async def apply_sensory_perception(self, perception_metadata: dict[str, Any]):
@@ -1249,7 +1352,7 @@ class StateService:
         Triggered by emotional/event cues from an acoustic backend.
 
         Backends that only transcribe (e.g. Whisper) supply no `emotional_bias`.
-        That absence means "no acoustic evidence", NOT "the user sounds neutral" —
+        That absence means "no acoustic evidence", NOT "the user sounds neutral" --
         see the note below.
         """
         emotion_bias = perception_metadata.get("emotional_bias")
@@ -1265,7 +1368,7 @@ class StateService:
 
         # A missing emotion estimate must not be defaulted to 0.0 and blended in.
         # Doing so pulls mood and inferred_valence toward zero on *every*
-        # perception, erasing affect that semantic appraisal just established —
+        # perception, erasing affect that semantic appraisal just established --
         # the agent flattens the more the user speaks. An explicit 0.0 from a
         # model that genuinely predicts emotion is a real neutral reading and is
         # still blended; only absence is skipped. bool is excluded because
@@ -1298,32 +1401,33 @@ class StateService:
                         1.0, self.current_state.energy + 0.15
                     )
                     self.current_state.trust = min(1.0, self.current_state.trust + 0.05)
-                    logger.info("😄 Agent sensed laughter - Energy/Trust boosted.")
+                    logger.info(" Agent sensed laughter - Energy/Trust boosted.")
                 elif event == "Applause":
                     self.current_state.energy = min(
                         1.0, self.current_state.energy + 0.2
                     )
-                    logger.info("👏 Agent sensed applause - Energy spike.")
+                    logger.info(" Agent sensed applause - Energy spike.")
                 elif event in ["Cough", "Sneeze"]:
                     self.current_state.attachment = min(
                         1.0, self.current_state.attachment + 0.02
                     )
                     logger.debug(
-                        f"🤧 Agent sensed {event} - Attachment nudged (Empathy)."
+                        f" Agent sensed {event} - Attachment nudged (Empathy)."
                     )
 
             self._enforce_bounds()
+            self._refresh_global_controls_locked()
         await self._persist_sensory_state_if_due()
 
     async def apply_somatic_perception(self, somatic: dict[str, Any]):
-        """Visual Somatic Homeostasis — recognising a comfort object feels good.
+        """Visual Somatic Homeostasis -- recognising a comfort object feels good.
 
         The visual counterpart to `apply_sensory_perception` above: that folds
         *how the user sounds* into mood, this folds *what the agent is looking
         at* into valence and arousal. Together they are the two halves of the
         perception-to-affect path.
 
-        Roadmap §C (`docs/FUTURE_FINETUNED_ADAPTER.md`) specifies a dopamine
+        Roadmap sectionC (`docs/FUTURE_FINETUNED_ADAPTER.md`) specifies a dopamine
         spike alongside the valence one, and both now happen literally: the
         valence lift below, and a real phasic burst via `release_dopamine`.
         Before phasic dopamine existed, the burst could only be approximated by
@@ -1353,7 +1457,7 @@ class StateService:
         if valence_spike <= 0.0 and arousal_spike <= 0.0:
             return
 
-        # Roadmap §C: D_t = min(1.0, D_{t-1} + 0.25). Falls back to the valence
+        # Roadmap sectionC: D_t = min(1.0, D_{t-1} + 0.25). Falls back to the valence
         # lift alone when a caller supplies no explicit burst.
         dopamine_spike = somatic.get("dopamine_spike", SOMATIC_DOPAMINE_SPIKE)
         try:
@@ -1373,10 +1477,11 @@ class StateService:
             self._enforce_bounds()
             # After bounds, so the burst is measured against the settled tonic.
             self.current_state.release_dopamine(dopamine_spike)
+            self._refresh_global_controls_locked()
             after_valence = self.current_state.valence
 
         logger.info(
-            "👁️  Somatic comfort recognised %s — valence %.2f → %.2f (dopamine now %.2f).",
+            "[Vision]  Somatic comfort recognised %s -- valence %.2f -> %.2f (dopamine now %.2f).",
             entities,
             before_valence,
             after_valence,
@@ -1447,10 +1552,11 @@ class StateService:
             # same ordering as apply_somatic_perception, same reason.
             if dopamine_spike > 0.0:
                 self.current_state.release_dopamine(dopamine_spike)
+            self._refresh_global_controls_locked()
             after_valence = self.current_state.valence
 
         logger.debug(
-            "[State] Facial reflex %r — valence %.3f → %.3f, arousal delta %+.3f.",
+            "[State] Facial reflex %r -- valence %.3f -> %.3f, arousal delta %+.3f.",
             reflex.get("name", "?"),
             before_valence,
             after_valence,
@@ -1464,7 +1570,7 @@ class StateService:
         `AgentState.release_cortisol` is the primitive and does no locking. A
         fire-and-forget System-2 appraisal writes affect concurrently with the
         synchronous path (finding A2), and the burst peak is computed *relative
-        to the tonic floor* — so an unlocked release that interleaves with a
+        to the tonic floor* -- so an unlocked release that interleaves with a
         valence write can measure its peak against a floor that no longer
         exists and store a burst of the wrong size.
 
@@ -1474,7 +1580,7 @@ class StateService:
         async with self._state_lock:
             level = self.current_state.release_cortisol(amount)
         if reason:
-            logger.info("[Endocrine] Cortisol released (%s) — now %.2f.", reason, level)
+            logger.info("[Endocrine] Cortisol released (%s) -- now %.2f.", reason, level)
         return level
 
     async def release_dopamine(self, amount: float, *, reason: str = "") -> float:
@@ -1488,7 +1594,7 @@ class StateService:
         async with self._state_lock:
             level = self.current_state.release_dopamine(amount)
         if reason:
-            logger.info("[Endocrine] Dopamine released (%s) — now %.2f.", reason, level)
+            logger.info("[Endocrine] Dopamine released (%s) -- now %.2f.", reason, level)
         return level
 
     async def release_adrenaline(self, amount: float, *, reason: str = "") -> float:
@@ -1501,16 +1607,17 @@ class StateService:
         """
         async with self._state_lock:
             level = self.current_state.release_adrenaline(amount)
+            self._refresh_global_controls_locked()
         if reason:
             logger.info(
-                "[Endocrine] Adrenaline released (%s) — now %.2f.", reason, level
+                "[Endocrine] Adrenaline released (%s) -- now %.2f.", reason, level
             )
         return level
 
     async def handle_system_tick(self, tick_metadata: dict[str, Any]):
         """
         Idle evolution triggered by NATS system.tick.
-        Implements ALMA exponential decay (§2.2) and Fatigue updates.
+        Implements ALMA exponential decay (section2.2) and Fatigue updates.
 
         audit/ROADMAP.md P2-14 (M2-A1): this ran **outside `_state_lock`**,
         mutating fatigue, mood, energy, dominance and all three trust fields
@@ -1563,7 +1670,7 @@ class StateService:
                 )
                 self._update_fatigue_python(now, dt_hours, is_night)
 
-            # ALMA Decay (§2.2): short-term affect decays back to baseline
+            # ALMA Decay (section2.2): short-term affect decays back to baseline
             base_v = self.current_state.baseline_valence
             base_ar = self.current_state.baseline_arousal
             base_d = self.current_state.baseline_dominance
@@ -1591,6 +1698,7 @@ class StateService:
 
             self.current_state.last_update = datetime.fromtimestamp(now)
             self._enforce_bounds()
+            self._refresh_global_controls_locked()
             await self.persist_state()
         logger.debug(
             "[State Heartbeat] V=%.3f Ar=%.3f D=%.3f F=%.3f",
@@ -1790,7 +1898,8 @@ class StateService:
             "cortisol": self.current_state.cortisol,
             "dopamine": self.current_state.dopamine,
             "adrenaline": self.current_state.adrenaline,
-            # Theory of Mind snapshot — dict format
+            "global_controls": self._global_controls.model_dump(),
+            # Theory of Mind snapshot -- dict format
             "user_mental_model": self.current_state.user_mental_model.model_dump(),
         }
 
@@ -1814,9 +1923,9 @@ class StateService:
             direct += " You are high-energy; use expressive, dynamic language."
 
         if D < 0.3:
-            direct += " You feel uncertain and deferential — ask more, assert less."
+            direct += " You feel uncertain and deferential -- ask more, assert less."
         elif D > 0.7:
-            direct += " You feel confident and in control — speak with conviction."
+            direct += " You feel confident and in control -- speak with conviction."
 
         if T < 0.3:
             direct += " You are feeling skeptical and maintaining boundaries."
