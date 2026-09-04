@@ -26,6 +26,8 @@ import time
 import uuid
 from typing import Any, Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
 from app.cognitive.percept import PerceptEnvelope
 from app.cognitive.vision_percept import (
     DetectedObject,
@@ -33,6 +35,7 @@ from app.cognitive.vision_percept import (
     IdentityEstimate,
     SpatialRelation,
     StructuredVisionPercept,
+    contains_emotional_language,
     validate_vision_invariants,
 )
 
@@ -57,6 +60,41 @@ def _clamp_unit(value: Any, default: float) -> float:
 
 def _new_percept_uid(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
+
+
+def _safe_staleness_ms(value: Any) -> float:
+    """Coerce a raw-payload staleness value to a finite, non-negative float,
+    defaulting to 0.0 for anything that isn't one -- missing, non-numeric,
+    NaN/infinite, or negative all collapse to the same safe default rather
+    than raising or silently carrying a nonsensical value forward."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if not math.isfinite(number) or number < 0.0:
+        return 0.0
+    return number
+
+
+def _sanitize_caption(caption: str) -> str:
+    """Return `caption` unchanged if it makes no emotional-fact claim, else
+    an empty string.
+
+    A VLM caption is the least trustworthy vision source this boundary
+    accepts: an off-the-shelf captioner asked to "describe what you see"
+    routinely volunteers an emotional inference unprompted ("the user looks
+    happy"), and that inference must never reach `scene_deltas` as if it
+    were an observation. Editing the sentence down to just its
+    non-emotional clause was considered and rejected -- word-level surgery
+    on a sentence you didn't generate risks leaving a grammatically broken
+    or, worse, misleadingly-reworded fragment that still reads as
+    authoritative. Dropping the caption whole and reporting no observation
+    for this frame is the safe default when it cannot be trusted verbatim;
+    `validate_vision_invariants` still re-checks the result before it
+    leaves `process()`, so a gap in this sanitizer is not the only line of
+    defense.
+    """
+    return "" if contains_emotional_language(caption) else caption
 
 
 class VLMCaptionVisionAdapter:
@@ -84,11 +122,13 @@ class VLMCaptionVisionAdapter:
             confidence = _clamp_unit(
                 raw_data.get("confidence"), default=self.default_confidence
             )
-            staleness_ms = float(raw_data.get("staleness_ms", 0.0) or 0.0)
+            staleness_ms = _safe_staleness_ms(raw_data.get("staleness_ms"))
         else:
             caption = str(raw_data or "").strip()
             confidence = self.default_confidence
             staleness_ms = 0.0
+
+        caption = _sanitize_caption(caption)
 
         percept = StructuredVisionPercept(
             scene_deltas=[caption] if caption else [],
@@ -98,6 +138,32 @@ class VLMCaptionVisionAdapter:
         )
         validate_vision_invariants(percept)
         return percept
+
+
+def _coerce_raw_list(data: dict[str, Any], key: str) -> list[Any]:
+    """Return the raw list at `key`, or an empty list for anything that
+    isn't actually one -- a missing key, an explicit `None`, or (the sharp
+    edge here) a plain string, which Python happily iterates one character
+    at a time instead of raising. A malformed upstream tracker payload
+    should degrade to "no observation for this field," not crash the
+    caller with a raw `TypeError`."""
+    value = data.get(key)
+    return value if isinstance(value, list) else []
+
+
+def _coerce_model_list[ModelT: BaseModel](
+    data: dict[str, Any], key: str, model: type[ModelT]
+) -> list[ModelT]:
+    """Build a list of `model` instances from `data[key]`, silently
+    dropping any entry that isn't a mapping `model(**entry)` could even be
+    attempted on (a bare string or number in the list, for example) rather
+    than letting `TypeError`/`AttributeError` from `**entry` unpacking
+    propagate out of `process()`."""
+    return [
+        model(**entry)
+        for entry in _coerce_raw_list(data, key)
+        if isinstance(entry, dict)
+    ]
 
 
 class SpatialTrackingVisionAdapter:
@@ -110,6 +176,14 @@ class SpatialTrackingVisionAdapter:
     `SpatialRelation`), so a raw payload that tries to smuggle an emotional
     label into a face's action units is rejected by `FacialObservable`'s own
     field validator before it ever reaches the returned percept.
+
+    The raw payload comes from an upstream tracker process, not from
+    cognition's own typed boundary, so every list-shaped field is coerced
+    defensively (`_coerce_raw_list`/`_coerce_model_list`) rather than
+    assumed well-formed: a missing key, an explicit `None`, a string where
+    a list was expected, or a malformed nested entry all degrade to "no
+    observation for that field" instead of raising a raw `TypeError` out of
+    `process()`.
     """
 
     default_confidence: float = 0.85
@@ -118,24 +192,21 @@ class SpatialTrackingVisionAdapter:
         data = raw_data if isinstance(raw_data, dict) else {}
 
         percept = StructuredVisionPercept(
-            track_ids=[str(t) for t in data.get("track_ids", [])],
-            identity_estimates=[
-                IdentityEstimate(**entry)
-                for entry in data.get("identity_estimates", [])
-            ],
-            objects=[DetectedObject(**entry) for entry in data.get("objects", [])],
-            actions_events=[str(a) for a in data.get("actions_events", [])],
+            track_ids=[str(t) for t in _coerce_raw_list(data, "track_ids")],
+            identity_estimates=_coerce_model_list(
+                data, "identity_estimates", IdentityEstimate
+            ),
+            objects=_coerce_model_list(data, "objects", DetectedObject),
+            actions_events=[str(a) for a in _coerce_raw_list(data, "actions_events")],
             gaze_pose=data.get("gaze_pose"),
-            facial_observables=[
-                FacialObservable(**entry)
-                for entry in data.get("facial_observables", [])
-            ],
-            scene_deltas=[str(s) for s in data.get("scene_deltas", [])],
-            spatial_relations=[
-                SpatialRelation(**entry)
-                for entry in data.get("spatial_relations", [])
-            ],
-            staleness_ms=float(data.get("staleness_ms", 0.0) or 0.0),
+            facial_observables=_coerce_model_list(
+                data, "facial_observables", FacialObservable
+            ),
+            scene_deltas=[str(s) for s in _coerce_raw_list(data, "scene_deltas")],
+            spatial_relations=_coerce_model_list(
+                data, "spatial_relations", SpatialRelation
+            ),
+            staleness_ms=_safe_staleness_ms(data.get("staleness_ms")),
             confidence=_clamp_unit(
                 data.get("confidence"), default=self.default_confidence
             ),

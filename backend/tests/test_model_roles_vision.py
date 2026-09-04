@@ -28,6 +28,7 @@ from app.cognitive.vision_percept import (
     IdentityEstimate,
     SpatialRelation,
     StructuredVisionPercept,
+    contains_emotional_language,
     validate_vision_invariants,
 )
 from app.llm.model_manifest import ModelCapability
@@ -39,7 +40,10 @@ from app.llm.model_roles import (
     ProviderScenario,
     RoleExecutionRequest,
     RoleExecutionResult,
+    RoleResultRejected,
     classify_scenario,
+    ensure_committable,
+    validate_execution_result,
 )
 from app.vision.adapters import (
     SpatialTrackingVisionAdapter,
@@ -93,12 +97,19 @@ def test_role_execution_request_defaults():
     assert request.model_tag is None
 
 
-def test_role_execution_result_defaults_are_success_shaped():
+def test_role_execution_result_defaults_are_fail_closed():
+    """`validated` must default to False: an unvalidated result reporting
+    itself trustworthy by default is exactly the gap
+    CODEX_REVIEW_OF_CLAUDE.md's P1 finding demonstrated (an arbitrary
+    RoleExecutionResult(raw_output="unsafe claim") read back validated=True
+    with zero checks run)."""
     result = RoleExecutionResult(role=ModelRole.EVALUATION, raw_output="ok")
 
     assert result.parsed_output is None
-    assert result.validated is True
+    assert result.validated is False
+    assert result.fallback_strategy == FallbackStrategy.NATIVE
     assert result.fallback_applied is False
+    assert result.validation_errors == []
     assert result.tokens_used == 0
     assert result.latency_ms == 0.0
     assert result.error is None
@@ -116,6 +127,233 @@ def test_role_execution_result_can_carry_a_fallback_and_error():
     assert result.fallback_applied is True
     assert result.validated is False
     assert result.error == "context window exceeded"
+
+
+# ---------------------------------------------------------------------------
+# validate_execution_result / ensure_committable: the enforceable gate a
+# role result must pass before commitment, regardless of fallback strategy
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_committable_rejects_the_reviewers_exact_probe():
+    """CODEX_REVIEW_OF_CLAUDE.md's P1 finding demonstrated
+    RoleExecutionResult(raw_output="unsafe claim") reporting validated=True
+    by default. It now defaults to False, and this is the hard gate: an
+    un-validated result of any shape must never reach commitment."""
+    result = RoleExecutionResult(role=ModelRole.PLANNING, raw_output="unsafe claim")
+
+    with pytest.raises(RoleResultRejected):
+        ensure_committable(result)
+
+
+def test_ensure_committable_accepts_a_gate_approved_result():
+    request = RoleExecutionRequest(role=ModelRole.PLANNING, prompt="plan")
+    result = RoleExecutionResult(role=ModelRole.PLANNING, raw_output="ok")
+
+    approved = validate_execution_result(request, result)
+
+    assert ensure_committable(approved) is approved
+
+
+def test_validate_execution_result_passes_with_no_constraints_configured():
+    request = RoleExecutionRequest(role=ModelRole.REALIZATION, prompt="say hi")
+    result = RoleExecutionResult(role=ModelRole.REALIZATION, raw_output="hi there")
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is True
+    assert validated.validation_errors == []
+
+
+def test_validate_execution_result_accepts_claims_within_allowed_set():
+    request = RoleExecutionRequest(
+        role=ModelRole.EVALUATION, prompt="x", allowed_claims=["fact-1", "fact-2"]
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.EVALUATION, raw_output="ok", parsed_output=["fact-1"]
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is True
+    assert validated.validation_errors == []
+
+
+def test_validate_execution_result_rejects_claim_outside_allowed_set():
+    request = RoleExecutionRequest(
+        role=ModelRole.EVALUATION, prompt="x", allowed_claims=["fact-1", "fact-2"]
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.EVALUATION, raw_output="ok", parsed_output=["fact-1", "fact-99"]
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is False
+    assert any("fact-99" in error for error in validated.validation_errors)
+    with pytest.raises(RoleResultRejected):
+        ensure_committable(validated)
+
+
+def test_validate_execution_result_accepts_claims_dict_shape():
+    """parsed_output may also be a dict carrying a "claims" list -- the
+    other natural shape a structured role output would take."""
+    request = RoleExecutionRequest(
+        role=ModelRole.EVALUATION, prompt="x", allowed_claims=["fact-1"]
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.EVALUATION,
+        raw_output="ok",
+        parsed_output={"claims": ["fact-1"], "summary": "..."},
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is True
+
+
+def test_validate_execution_result_fails_closed_when_claims_configured_but_unparseable():
+    """allowed_claims restricts the request, but parsed_output gives
+    nothing checkable -- the caller's restriction must not be silently
+    exempted just because the result is unstructured."""
+    request = RoleExecutionRequest(
+        role=ModelRole.EVALUATION, prompt="x", allowed_claims=["fact-1"]
+    )
+    result = RoleExecutionResult(role=ModelRole.EVALUATION, raw_output="ok")
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is False
+    assert validated.validation_errors
+
+
+def test_validate_execution_result_schema_check_rejects_missing_required_field():
+    request = RoleExecutionRequest(
+        role=ModelRole.PLANNING,
+        prompt="x",
+        schema_definition={
+            "type": "object",
+            "required": ["plan_id", "steps"],
+        },
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.PLANNING, raw_output="ok", parsed_output={"plan_id": "p1"}
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is False
+    assert any("schema validation failed" in error for error in validated.validation_errors)
+
+
+def test_validate_execution_result_schema_check_accepts_valid_shape():
+    request = RoleExecutionRequest(
+        role=ModelRole.PLANNING,
+        prompt="x",
+        schema_definition={
+            "type": "object",
+            "required": ["plan_id", "steps"],
+            "properties": {"steps": {"type": "array"}},
+        },
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.PLANNING,
+        raw_output="ok",
+        parsed_output={"plan_id": "p1", "steps": ["look", "speak"]},
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is True
+    assert validated.validation_errors == []
+
+
+def test_validate_execution_result_custom_validator_can_reject():
+    request = RoleExecutionRequest(role=ModelRole.INTERPRETATION, prompt="x")
+    result = RoleExecutionResult(
+        role=ModelRole.INTERPRETATION, raw_output="ok", parsed_output={"intent": "unknown"}
+    )
+
+    validated = validate_execution_result(
+        request, result, custom_validator=lambda parsed: parsed.get("intent") != "unknown"
+    )
+
+    assert validated.validated is False
+    assert "custom_validator rejected parsed_output" in validated.validation_errors
+
+
+def test_validate_execution_result_custom_validator_exception_is_recorded_not_raised():
+    """A broken custom_validator must not crash the gate it is supposed to
+    strengthen -- it should be recorded as a validation failure instead."""
+    request = RoleExecutionRequest(role=ModelRole.INTERPRETATION, prompt="x")
+    result = RoleExecutionResult(role=ModelRole.INTERPRETATION, raw_output="ok")
+
+    def broken_validator(_parsed):
+        raise RuntimeError("boom")
+
+    validated = validate_execution_result(request, result, custom_validator=broken_validator)
+
+    assert validated.validated is False
+    assert any("boom" in error for error in validated.validation_errors)
+
+
+def test_validate_execution_result_is_pure_and_returns_a_new_object():
+    request = RoleExecutionRequest(role=ModelRole.PLANNING, prompt="x")
+    result = RoleExecutionResult(role=ModelRole.PLANNING, raw_output="ok")
+
+    validated = validate_execution_result(request, result)
+
+    assert result.validated is False  # the original is untouched
+    assert validated is not result
+    assert validated.validated is True
+
+
+@pytest.mark.parametrize(
+    "strategy", [FallbackStrategy.TEMPLATE_PROCEDURE, FallbackStrategy.ROLE_DEGRADATION]
+)
+def test_fallback_results_are_rejected_until_they_pass_the_same_gate_as_native(strategy):
+    """The fix's core requirement: TEMPLATE_PROCEDURE and ROLE_DEGRADATION
+    results are not exempt from validation just because a fallback was
+    already chosen by negotiation -- they must pass through
+    validate_execution_result exactly like a NATIVE result before
+    ensure_committable will accept them."""
+    request = RoleExecutionRequest(role=ModelRole.COMPRESSION, prompt="x")
+    unvalidated = RoleExecutionResult(
+        role=ModelRole.COMPRESSION,
+        raw_output="template output",
+        fallback_strategy=strategy,
+        fallback_applied=True,
+    )
+
+    with pytest.raises(RoleResultRejected):
+        ensure_committable(unvalidated)
+
+    approved = validate_execution_result(request, unvalidated)
+    assert approved.fallback_strategy == strategy
+    assert ensure_committable(approved) is approved
+
+
+def test_fallback_result_with_rejected_claims_still_cannot_commit():
+    """A fallback strategy must not grant an exemption from the
+    allowed_claims check either -- a degraded role can still assert an
+    out-of-scope claim, and the gate must catch it exactly as it would for
+    a NATIVE result."""
+    request = RoleExecutionRequest(
+        role=ModelRole.EVALUATION, prompt="x", allowed_claims=["fact-1"]
+    )
+    result = RoleExecutionResult(
+        role=ModelRole.EVALUATION,
+        raw_output="template",
+        parsed_output=["fact-1", "unauthorized-claim"],
+        fallback_strategy=FallbackStrategy.TEMPLATE_PROCEDURE,
+        fallback_applied=True,
+    )
+
+    validated = validate_execution_result(request, result)
+
+    assert validated.validated is False
+    with pytest.raises(RoleResultRejected):
+        ensure_committable(validated)
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +681,129 @@ def test_validate_vision_invariants_catches_post_construction_mutation():
 
 
 # ---------------------------------------------------------------------------
+# Anti-emotion-fact invariant: expanded lexicon, predicate phrases, and
+# scene_deltas (the gap CODEX_REVIEW_OF_CLAUDE.md's P1 finding demonstrated
+# was bypassable through both non-lexicon words and an unguarded field)
+# ---------------------------------------------------------------------------
+
+# The reviewer's own probes: "the user appears furious", "the user looks
+# ecstatic", and "the user is depressed" were previously accepted by both
+# FacialObservable and (because scene_deltas was never checked at all) a
+# VLM caption. "she responded angrily" exercises the adverb form the
+# original module's own comment admitted it did not catch.
+_REVIEWER_PROBE_PHRASES = [
+    "the user appears furious",
+    "the user looks ecstatic",
+    "the user is depressed",
+    "she responded angrily",
+]
+
+
+@pytest.mark.parametrize("phrase", _REVIEWER_PROBE_PHRASES)
+def test_contains_emotional_language_catches_reviewer_probe_phrases(phrase):
+    assert contains_emotional_language(phrase) is True
+
+
+@pytest.mark.parametrize("phrase", _REVIEWER_PROBE_PHRASES)
+def test_facial_observable_rejects_reviewer_probe_phrases_in_muscle_movement(phrase):
+    with pytest.raises(ValidationError):
+        FacialObservable(muscle_movement=phrase)
+
+
+def test_emotion_lexicon_does_not_flag_the_common_nonemotional_sense_of_content():
+    """"content" was removed from the lexicon specifically because, once
+    applied to free-form scene_deltas text, it collides constantly with its
+    ordinary sense ("the content of the frame") rather than an emotional
+    claim. A regression here would mean benign captions get spuriously
+    redacted."""
+    assert contains_emotional_language("scene content: a mug on the table") is False
+
+
+@pytest.mark.parametrize("phrase", _REVIEWER_PROBE_PHRASES)
+def test_validate_vision_invariants_rejects_reviewer_probe_phrases_in_scene_deltas(phrase):
+    """scene_deltas has no per-item constructor-time validator (it is
+    free-form text), so this is the first line of defense for it --
+    exactly the gap the review demonstrated with a plain
+    scene_deltas=["the user is angry"] percept."""
+    percept = StructuredVisionPercept(scene_deltas=[phrase])
+
+    with pytest.raises(ValueError):
+        validate_vision_invariants(percept)
+
+
+def test_validate_vision_invariants_passes_for_benign_scene_deltas():
+    percept = StructuredVisionPercept(
+        scene_deltas=["a mug is on the table", "the door is open"]
+    )
+
+    validate_vision_invariants(percept)  # must not raise
+
+
+def test_to_percept_envelope_rejects_direct_emotion_claim_in_scene_deltas():
+    """The full boundary, end to end: a hand-built percept (bypassing both
+    adapters entirely) that asserts an emotion fact in scene_deltas must
+    still be caught before it reaches PerceptEnvelope."""
+    percept = StructuredVisionPercept(scene_deltas=["the user is angry"])
+
+    with pytest.raises(ValueError):
+        to_percept_envelope(percept)
+
+
+# ---------------------------------------------------------------------------
+# VLMCaptionVisionAdapter: caption sanitization against the anti-emotion-
+# fact invariant
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "caption",
+    [
+        "the user is angry and pacing around the room",
+        "the user appears furious",
+        "the user looks ecstatic",
+        "the user is depressed",
+        "she responded angrily to the phone call",
+    ],
+)
+def test_vlm_caption_adapter_strictly_rejects_emotion_claims_from_captions(caption):
+    """The caption is untrusted external VLM output; an emotional claim in
+    it must never be promoted into an authoritative scene delta. The
+    adapter sanitizes it away rather than raising, so the frame is reported
+    as "no observation" instead of crashing vision for that tick."""
+    percept = VLMCaptionVisionAdapter().process(caption)
+
+    assert percept.scene_deltas == []
+    validate_vision_invariants(percept)  # the backstop must also see nothing wrong
+
+
+def test_vlm_caption_adapter_sanitizes_emotion_claims_in_dict_payload():
+    percept = VLMCaptionVisionAdapter().process(
+        {"description": "the user is depressed", "confidence": 0.6}
+    )
+
+    assert percept.scene_deltas == []
+
+
+def test_vlm_caption_adapter_preserves_benign_captions_unchanged():
+    """Sanitization must not be so aggressive that it silently discards
+    ordinary, non-emotional observations -- only captions that actually
+    trip the lexicon should be dropped."""
+    percept = VLMCaptionVisionAdapter().process("a person is typing at a desk")
+
+    assert percept.scene_deltas == ["a person is typing at a desk"]
+
+
+def test_vlm_caption_adapter_output_never_fails_the_invariant_backstop():
+    """Belt-and-suspenders check: whatever the sanitizer does or does not
+    catch, the percept it returns must always satisfy
+    validate_vision_invariants -- process() calls it internally, so a
+    caller never sees an adapter output that would fail it."""
+    for caption in [*_REVIEWER_PROBE_PHRASES, "a benign caption", ""]:
+        percept = VLMCaptionVisionAdapter().process(caption)
+        validate_vision_invariants(percept)  # must not raise for any case
+
+
+# ---------------------------------------------------------------------------
 # Adapter conformance
 # ---------------------------------------------------------------------------
 
@@ -534,6 +895,97 @@ def test_spatial_tracking_adapter_handles_empty_payload():
     assert percept.track_ids == []
     assert percept.objects == []
     assert percept.provenance == "spatial_tracking"
+
+
+# ---------------------------------------------------------------------------
+# SpatialTrackingVisionAdapter: malformed-input coercion (P2 fix). A raw
+# tracker payload comes from an upstream process outside cognition's typed
+# boundary, so None, wrong types, and out-of-range staleness must degrade
+# safely rather than crash process() with a raw TypeError/ValueError.
+# ---------------------------------------------------------------------------
+
+
+def test_spatial_tracking_adapter_handles_none_raw_data():
+    percept = SpatialTrackingVisionAdapter().process(None)
+
+    assert percept.track_ids == []
+    assert percept.objects == []
+    assert percept.provenance == "spatial_tracking"
+
+
+@pytest.mark.parametrize(
+    "list_field", ["track_ids", "objects", "identity_estimates", "facial_observables", "spatial_relations", "actions_events", "scene_deltas"]
+)
+def test_spatial_tracking_adapter_coerces_none_list_field_to_empty(list_field):
+    """A key present with an explicit None value is the sharp edge here:
+    dict.get(key, []) does NOT fall back to the default when the key
+    exists, so a naive `data.get(key, [])` still receives None."""
+    percept = SpatialTrackingVisionAdapter().process({list_field: None})
+
+    assert getattr(percept, list_field) == []
+
+
+def test_spatial_tracking_adapter_coerces_string_track_ids_to_empty_instead_of_splitting_characters():
+    """The exact bug the peer review demonstrated: a string track_ids value
+    silently iterated into one bogus "track" per character."""
+    percept = SpatialTrackingVisionAdapter().process({"track_ids": "abc"})
+
+    assert percept.track_ids == []
+
+
+def test_spatial_tracking_adapter_drops_malformed_nested_entries():
+    """A non-dict entry inside an otherwise-valid list (a string, a number)
+    must not crash the ** unpacking used to build the nested Pydantic
+    models -- it is dropped, and well-formed entries are still kept."""
+    percept = SpatialTrackingVisionAdapter().process(
+        {
+            "objects": ["not-a-dict", {"label": "mug", "confidence": 0.9}, 42],
+            "identity_estimates": [None, {"person_id": "p1"}],
+        }
+    )
+
+    assert [obj.label for obj in percept.objects] == ["mug"]
+    assert [ident.person_id for ident in percept.identity_estimates] == ["p1"]
+
+
+@pytest.mark.parametrize(
+    "raw_data",
+    [
+        {"track_ids": "abc", "objects": "nope", "staleness_ms": float("nan")},
+        {"track_ids": 12345},
+        {"objects": {"label": "mug"}},  # a dict, not a list of dicts
+        "just a string, not a dict at all",
+        42,
+    ],
+)
+def test_spatial_tracking_adapter_never_raises_on_malformed_raw_data(raw_data):
+    percept = SpatialTrackingVisionAdapter().process(raw_data)
+
+    assert isinstance(percept, StructuredVisionPercept)
+
+
+@pytest.mark.parametrize("bad_staleness", [float("nan"), float("inf"), float("-inf"), -50.0, "not-a-number", None])
+def test_spatial_tracking_adapter_defaults_invalid_staleness_to_zero(bad_staleness):
+    percept = SpatialTrackingVisionAdapter().process({"staleness_ms": bad_staleness})
+
+    assert percept.staleness_ms == 0.0
+
+
+def test_spatial_tracking_adapter_preserves_valid_positive_staleness():
+    percept = SpatialTrackingVisionAdapter().process({"staleness_ms": 42.5})
+
+    assert percept.staleness_ms == 42.5
+
+
+@pytest.mark.parametrize("bad_staleness", [float("nan"), -10.0, "garbage"])
+def test_vlm_caption_adapter_also_defaults_invalid_staleness_to_zero(bad_staleness):
+    """The original peer review flagged this gap in "either adapter" --
+    VLMCaptionVisionAdapter shares the same staleness_ms coercion helper."""
+    percept = VLMCaptionVisionAdapter().process(
+        {"description": "a mug on the table", "staleness_ms": bad_staleness}
+    )
+
+    assert percept.staleness_ms == 0.0
 
 
 # ---------------------------------------------------------------------------

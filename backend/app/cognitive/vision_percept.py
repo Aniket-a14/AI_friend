@@ -22,6 +22,18 @@ observables for the case a caller mutates a list field after construction
 (Pydantic does not re-run field validators on in-place list mutation, so a
 `.append()` after the fact would otherwise slip past the constructor-time
 check unnoticed).
+
+Peer review (`orchestration/PHASE_05/CODEX_REVIEW_OF_CLAUDE.md`) found the
+invariant was bypassable through a second door: `scene_deltas` is free-form
+narrative text (the natural home for a VLM caption), and neither the
+original lexicon nor `validate_vision_invariants` ever looked at it, so a
+caption like "the user is angry" reached `to_percept_envelope` untouched.
+`validate_vision_invariants` now inspects `scene_deltas` as well as
+`facial_observables`, and `VLMCaptionVisionAdapter`
+(`app/vision/adapters.py`) sanitizes caption text before it ever becomes a
+scene delta -- see that module's docstring for why dropping the whole
+caption, rather than editing out just the offending word, is the safer
+default here.
 """
 
 from __future__ import annotations
@@ -32,36 +44,76 @@ from pydantic import BaseModel, Field, field_validator
 
 # Not a general sentiment lexicon and not meant to be exhaustive coverage of
 # English emotion vocabulary -- it only needs to catch a vision pipeline (or
-# a careless caller) writing an emotional label into a field documented as
-# muscle movement. Word-boundary matched and case-insensitive so it catches
-# "Angry", "angrily" is not caught, but "angry" embedded in a longer phrase
-# ("looks angry today") is.
+# a careless caller) writing an emotional label, or an emotional predicate
+# ("appears furious", "looks ecstatic", "is depressed"), into a field
+# documented as observation, not inference. Word-boundary matched and
+# case-insensitive, so a predicate phrase is caught for free once its
+# adjective is in the lexicon -- no separate phrase-pattern parser is
+# needed. Both the base form and its common adverbial form are listed
+# explicitly (English inflection is irregular enough -- "angry"/"angrily",
+# "furious"/"furiously" -- that a suffix-stripping heuristic would either
+# miss these or false-positive on unrelated words).
+#
+# Deliberately excludes "content"/"contentment": once this lexicon is
+# applied to free-form scene_deltas text (VLM captions, not just a
+# constrained muscle_movement label), "content" collides constantly with
+# its ordinary, non-emotional sense ("the content of the frame"). Rejecting
+# a caption for using an extremely common English word in its mundane sense
+# is a worse failure than missing the rare case where "content" was meant
+# as an emotional claim.
 _EMOTION_LEXICON: frozenset[str] = frozenset(
     {
         "happy",
         "happiness",
+        "happily",
         "sad",
         "sadness",
+        "sadly",
         "angry",
         "anger",
+        "angrily",
+        "furious",
+        "furiously",
+        "fury",
+        "enraged",
+        "enrage",
+        "rage",
+        "raging",
+        "irate",
+        "livid",
         "afraid",
         "fear",
         "fearful",
         "scared",
+        "terrified",
+        "terrify",
+        "terrifying",
+        "terror",
+        "petrified",
         "joy",
         "joyful",
+        "joyfully",
+        "ecstatic",
+        "ecstasy",
+        "ecstatically",
+        "overjoyed",
+        "jubilant",
+        "jubilation",
+        "gleeful",
+        "gleefully",
+        "glee",
         "disgust",
         "disgusted",
         "surprised",
         "surprise",
         "anxious",
         "anxiety",
+        "anxiously",
         "excited",
         "excitement",
-        "content",
-        "contentment",
         "distressed",
         "distress",
+        "distraught",
         "upset",
         "worried",
         "worry",
@@ -74,14 +126,17 @@ _EMOTION_LEXICON: frozenset[str] = frozenset(
         "love",
         "hate",
         "nervous",
+        "nervously",
         "embarrassed",
         "embarrassment",
         "proud",
+        "proudly",
         "pride",
         "ashamed",
         "shame",
         "grief",
         "sorrow",
+        "sorrowful",
         "elated",
         "elation",
         "irritated",
@@ -91,13 +146,23 @@ _EMOTION_LEXICON: frozenset[str] = frozenset(
         "cheerful",
         "gloomy",
         "miserable",
+        "depressed",
+        "depression",
+        "depressing",
+        "depressive",
+        "devastated",
+        "devastating",
+        "devastation",
+        "heartbroken",
+        "melancholy",
+        "melancholic",
     }
 )
 
 _WORD_RE = re.compile(r"[A-Za-z]+")
 
 
-def _contains_emotional_language(text: str) -> bool:
+def contains_emotional_language(text: str) -> bool:
     return any(word.lower() in _EMOTION_LEXICON for word in _WORD_RE.findall(text))
 
 
@@ -130,7 +195,7 @@ class FacialObservable(BaseModel):
     @classmethod
     def _reject_emotion_labels_in_action_units(cls, value: list[str]) -> list[str]:
         for unit in value:
-            if _contains_emotional_language(unit):
+            if contains_emotional_language(unit):
                 raise ValueError(
                     "action_units must describe muscle movement, not an "
                     f"emotional fact: {unit!r}"
@@ -140,7 +205,7 @@ class FacialObservable(BaseModel):
     @field_validator("muscle_movement")
     @classmethod
     def _reject_emotion_labels_in_muscle_movement(cls, value: str) -> str:
-        if _contains_emotional_language(value):
+        if contains_emotional_language(value):
             raise ValueError(
                 "muscle_movement must describe observable movement, not an "
                 f"emotional fact: {value!r}"
@@ -172,27 +237,38 @@ class StructuredVisionPercept(BaseModel):
 
 
 def validate_vision_invariants(percept: StructuredVisionPercept) -> None:
-    """Re-check every facial observable in `percept` for emotional
-    language, independent of whatever `FacialObservable`'s own field
-    validators already caught at construction time.
+    """Re-check every facial observable and scene delta in `percept` for
+    emotional language, independent of whatever field-level validation
+    already ran at construction time.
 
-    This exists because Pydantic does not re-validate a list field when its
-    contents are mutated in place (`observable.action_units.append(...)`
-    after construction bypasses the constructor-time check entirely). Any
-    code path that hands a `StructuredVisionPercept` to cognition --
-    `to_percept_envelope` calls this first -- gets one final, authoritative
-    check regardless of how the percept was assembled.
+    This exists for two distinct reasons. First, Pydantic does not
+    re-validate a list field when its contents are mutated in place
+    (`observable.action_units.append(...)` after construction bypasses the
+    constructor-time check entirely). Second, `scene_deltas` has no
+    per-item constructor-time validator at all -- it is free-form narrative
+    text (a VLM caption is exactly this shape), so `StructuredVisionPercept(
+    scene_deltas=["the user is angry"])` builds without complaint. This
+    function is the one place both gaps close: any code path that hands a
+    `StructuredVisionPercept` to cognition -- `to_percept_envelope` calls
+    this first -- gets one final, authoritative check regardless of how the
+    percept was assembled or which field the emotional claim landed in.
     """
     for observable in percept.facial_observables:
         for unit in observable.action_units:
-            if _contains_emotional_language(unit):
+            if contains_emotional_language(unit):
                 raise ValueError(
                     "StructuredVisionPercept invariant violated: a facial "
                     f"observable's action_units contains an emotional fact: {unit!r}"
                 )
-        if _contains_emotional_language(observable.muscle_movement):
+        if contains_emotional_language(observable.muscle_movement):
             raise ValueError(
                 "StructuredVisionPercept invariant violated: a facial "
                 "observable's muscle_movement contains an emotional fact: "
                 f"{observable.muscle_movement!r}"
+            )
+    for delta in percept.scene_deltas:
+        if contains_emotional_language(delta):
+            raise ValueError(
+                "StructuredVisionPercept invariant violated: a scene delta "
+                f"contains an emotional fact assertion: {delta!r}"
             )

@@ -22,13 +22,31 @@ negotiator that could itself reach into agent state would be exactly the
 kind of provider-swap hazard SS25 exists to rule out. See
 `test_model_roles_vision.py`'s invariant tests for the checks that keep this
 true as the module evolves.
+
+Peer review (`orchestration/PHASE_05/CODEX_REVIEW_OF_CLAUDE.md`) found a real
+gap in that story: negotiation being pure and advisory is not the same as
+the *result* of running a role being trustworthy. `RoleExecutionResult`
+originally defaulted `validated=True`, so an arbitrary, never-checked result
+(the review's own probe: `RoleExecutionResult(raw_output="unsafe claim")`)
+reported itself as validated with no work done to earn that. `validated`
+now defaults to `False` -- fail-closed, matching the rest of this module's
+posture -- and `validate_execution_result` is the one function allowed to
+flip it to `True`, only after checking the request's `allowed_claims` and
+`schema_definition` against what the result actually produced.
+`ensure_committable` is the hard gate: it raises `RoleResultRejected` for
+any result -- `NATIVE` or either fallback strategy alike -- that reaches it
+without having passed that check. Fallback strategy grants no exemption;
+there is no code path from "negotiation chose a strategy" to "commit this
+result" that does not pass through `ensure_committable`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 from typing import Any
 
+import jsonschema
 from pydantic import BaseModel, Field
 
 from app.llm.model_manifest import ModelCapability, get_model_capability
@@ -95,13 +113,23 @@ class RoleExecutionRequest(BaseModel):
 
 class RoleExecutionResult(BaseModel):
     """What came back from running a role, including whether it was native
-    or a fallback was applied to get there."""
+    or a fallback was applied to get there.
+
+    `validated` defaults to `False`: a freshly constructed result has not
+    been checked against its request's `allowed_claims` or
+    `schema_definition` yet, and reporting itself trustworthy by default
+    would make that check optional in practice. Only
+    `validate_execution_result` may set this `True`, and only after the
+    checks actually pass.
+    """
 
     role: ModelRole
     raw_output: str
     parsed_output: Any = None
-    validated: bool = True
+    validated: bool = False
+    fallback_strategy: FallbackStrategy = FallbackStrategy.NATIVE
     fallback_applied: bool = False
+    validation_errors: list[str] = Field(default_factory=list)
     tokens_used: int = 0
     latency_ms: float = 0.0
     error: str | None = None
@@ -254,3 +282,133 @@ class ProviderCapabilityNegotiator:
         details["model_tag"] = model_tag
         details["scenario"] = classify_scenario(model_tag).value
         return fits, strategy, details
+
+
+def _check_allowed_claims(
+    request: RoleExecutionRequest, result: RoleExecutionResult
+) -> list[str]:
+    """Verify every claim `result` actually makes is a member of
+    `request.allowed_claims`.
+
+    "Claims made" is read from `result.parsed_output`: a bare list is taken
+    as the claim identifiers directly, and a dict is checked for a
+    `"claims"` key holding such a list -- the two natural shapes a role's
+    structured output would take. If `allowed_claims` is empty, the request
+    places no claim restriction and this check trivially passes. If it is
+    non-empty but `parsed_output` provides nothing checkable, that is
+    treated as a failure rather than a pass: a caller that bothered to
+    restrict claims gets no benefit from that restriction if an
+    unstructured result is silently exempted from it.
+    """
+    if not request.allowed_claims:
+        return []
+
+    allowed = set(request.allowed_claims)
+    claims_made: list[Any] | None = None
+    if isinstance(result.parsed_output, list):
+        claims_made = result.parsed_output
+    elif isinstance(result.parsed_output, dict):
+        maybe_claims = result.parsed_output.get("claims")
+        if isinstance(maybe_claims, list):
+            claims_made = maybe_claims
+
+    if claims_made is None:
+        message = (
+            "allowed_claims is configured but parsed_output provides no checkable "
+            "claims list (expected a list, or a dict with a 'claims' list)"
+        )
+        return [message]
+
+    errors = [
+        f"claim not in allowed_claims: {claim!r}"
+        for claim in claims_made
+        if str(claim) not in allowed
+    ]
+    return errors
+
+
+def _check_schema_definition(
+    parsed_output: Any, schema_definition: dict[str, Any]
+) -> list[str]:
+    """Validate `parsed_output` against `schema_definition` using the real
+    JSON Schema spec (the `jsonschema` package), rather than a hand-rolled
+    subset that would only ever cover whatever someone remembered to
+    implement."""
+    try:
+        jsonschema.validate(instance=parsed_output, schema=schema_definition)
+    except jsonschema.ValidationError as exc:
+        return [f"schema validation failed: {exc.message}"]
+    except jsonschema.SchemaError as exc:
+        return [f"schema_definition is not a valid JSON Schema: {exc.message}"]
+    return []
+
+
+def validate_execution_result(
+    request: RoleExecutionRequest,
+    result: RoleExecutionResult,
+    custom_validator: Callable[[Any], bool] | None = None,
+) -> RoleExecutionResult:
+    """The enforceable gate a `RoleExecutionResult` must pass before it may
+    be treated as committable, regardless of whether it is `NATIVE` or
+    either fallback strategy.
+
+    Checks, in order: `request.allowed_claims` against whatever claims
+    `result.parsed_output` actually makes; `request.schema_definition`
+    against `result.parsed_output`'s shape, if a schema was given; and
+    `custom_validator(result.parsed_output)`, if the caller supplied one,
+    for a check specific to that call site (a raising validator is treated
+    as a failure, not propagated -- a broken validator must not crash the
+    gate it is supposed to be strengthening).
+
+    Returns a new `RoleExecutionResult` (this module stays pure throughout,
+    per its own module docstring) with `validated=True` only if every
+    configured check passed; otherwise `validated=False` and
+    `validation_errors` lists every reason, so a caller inspecting a
+    rejected result can see why without re-deriving the checks itself.
+    """
+    errors = list(_check_allowed_claims(request, result))
+
+    if request.schema_definition is not None:
+        errors.extend(_check_schema_definition(result.parsed_output, request.schema_definition))
+
+    if custom_validator is not None:
+        try:
+            if not custom_validator(result.parsed_output):
+                errors.append("custom_validator rejected parsed_output")
+        except Exception as exc:
+            # A broken custom_validator must not crash the gate it is
+            # supposed to be strengthening -- record it as a failure instead.
+            errors.append(f"custom_validator raised {type(exc).__name__}: {exc}")
+
+    return result.model_copy(update={"validated": not errors, "validation_errors": errors})
+
+
+class RoleResultRejected(Exception):
+    """Raised by `ensure_committable` for a `RoleExecutionResult` that has
+    not passed `validate_execution_result`."""
+
+
+def ensure_committable(result: RoleExecutionResult) -> RoleExecutionResult:
+    """The single required checkpoint before a `RoleExecutionResult` --
+    `NATIVE` or any fallback strategy alike -- may be used as committed
+    input to a candidate or action.
+
+    Raises `RoleResultRejected` if `result.validated` is not `True`: a
+    result that was never run through `validate_execution_result`, or was
+    and failed it. A result's `fallback_strategy` grants no exemption --
+    `TEMPLATE_PROCEDURE` and `ROLE_DEGRADATION` are checked exactly like
+    `NATIVE`, because a degraded role is still asserting claims into
+    cognition and a template is still producing output a caller might act
+    on. This is what makes "fallbacks cannot bypass validation" an
+    enforced property of this module rather than a convention callers are
+    trusted to follow: there is no path to commitment that skips this
+    function.
+    """
+    if not result.validated:
+        reason = "; ".join(result.validation_errors) or "result was never validated"
+        raise RoleResultRejected(
+            f"RoleExecutionResult for role {result.role.value} "
+            f"(fallback_strategy={result.fallback_strategy.value}) is not "
+            f"committable: {reason}"
+        )
+    return result

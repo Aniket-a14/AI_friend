@@ -217,4 +217,203 @@ encoding issues) plus a direct `.decode("ascii")` pass on all four files.
 
 ---
 
+## 6. Fix Round (peer-review response)
+
+Following reciprocal review, `orchestration/PHASE_05/FIX_PLAN.md` arbitrated
+two P1 findings from `CODEX_REVIEW_OF_CLAUDE.md` and one P2 finding, all
+against this package. This section records what changed in response;
+sections 1-5 above describe the original implementation and are otherwise
+unchanged.
+
+### P1: anti-emotion-fact invariant was bypassable via `scene_deltas` and non-lexicon words
+
+The review demonstrated two concrete gaps: `scene_deltas` (free-form text,
+the natural home for a VLM caption) was never checked by
+`validate_vision_invariants` at all, so `StructuredVisionPercept(
+scene_deltas=["the user is angry"])` built and normalized without
+complaint; and the emotion lexicon missed several common words the review
+named explicitly ("furious", "ecstatic", "depressed") plus the adverb form
+of an already-covered word ("angrily").
+
+- `app/cognitive/vision_percept.py`: `contains_emotional_language` (renamed
+  from the module-private `_contains_emotional_language` -- it is now a
+  genuine cross-module utility, needed by `app/vision/adapters.py` too, so
+  it no longer hides behind a leading underscore) gained roughly 50 new
+  lexicon entries: the review's own three named words plus their inflected
+  forms (furious/furiously/fury, ecstatic/ecstasy/ecstatically,
+  depressed/depression/depressing/depressive), several adjacent
+  high-intensity emotion words (terrified, devastated, heartbroken,
+  distraught, petrified, overjoyed, jubilant), and the adverb form of every
+  base word likely to appear predicatively ("angrily", "sadly", "happily",
+  and others) -- English inflection is irregular enough that a
+  suffix-stripping heuristic would either miss these or false-positive on
+  unrelated words, so each form is listed explicitly. Deliberately
+  *removed* "content"/"contentment": once the lexicon runs over
+  `scene_deltas`-shaped free narrative text rather than only a constrained
+  `muscle_movement` label, "content" collides constantly with its ordinary
+  sense ("the content of the frame"), and rejecting a benign caption for
+  using a common English word in its mundane sense is a worse failure than
+  missing the rare case where it was meant emotionally.
+- `validate_vision_invariants` now also inspects `percept.scene_deltas` and
+  raises `ValueError` on the same terms as `facial_observables`.
+- `app/vision/adapters.py`: `VLMCaptionVisionAdapter` now sanitizes caption
+  text through a new `_sanitize_caption` helper before it can become a
+  scene delta. An emotion-bearing caption is dropped whole (scene_deltas
+  stays empty for that frame) rather than edited down to its non-emotional
+  clause -- word-level surgery on a sentence the adapter didn't generate
+  risks leaving a grammatically broken or misleadingly-reworded fragment
+  that still reads as authoritative observation. `validate_vision_invariants`
+  still runs at the end of `process()` as a second, independent backstop,
+  so a gap in the sanitizer's lexicon is not the only line of defense.
+- 21 new tests: the review's exact three probe phrases plus the adverb
+  form, parametrized across `contains_emotional_language`,
+  `FacialObservable.muscle_movement`, `validate_vision_invariants` on a
+  direct `scene_deltas` construction, `to_percept_envelope` end-to-end, and
+  every `VLMCaptionVisionAdapter` caption path (string input, dict
+  payload); a benign-caption-is-preserved test and a
+  `content`-is-no-longer-flagged regression test guard against the fix
+  being too aggressive in the other direction.
+
+### P1: `RoleExecutionResult` had no enforceable validation gate
+
+The review's exact probe: `RoleExecutionResult(raw_output="unsafe claim")`
+reported `validated=True` by construction default, with zero checks ever
+run -- and nothing in the module prevented a `TEMPLATE_PROCEDURE` or
+`ROLE_DEGRADATION` fallback result from being treated the same way.
+
+- `app/llm/model_roles.py`: `RoleExecutionResult.validated` now defaults to
+  `False` (fail-closed, consistent with the rest of this module's posture).
+  Added `fallback_strategy: FallbackStrategy = FallbackStrategy.NATIVE` and
+  `validation_errors: list[str] = Field(default_factory=list)`.
+- New `validate_execution_result(request, result, custom_validator=None) ->
+  RoleExecutionResult`: checks `request.allowed_claims` against whatever
+  claims `result.parsed_output` actually makes (a bare list, or a dict with
+  a `"claims"` list -- the two natural shapes; if `allowed_claims` is
+  configured but `parsed_output` offers nothing checkable, that is a
+  failure, not a silent pass), validates `result.parsed_output` against
+  `request.schema_definition` when present, and runs an optional
+  `custom_validator` (an exception from a broken validator is recorded as a
+  failure rather than propagated, so a bad validator cannot crash the gate
+  it exists to strengthen). Returns a new `RoleExecutionResult` with
+  `validated=True` only if every configured check passed; this module
+  remains pure throughout, consistent with `ProviderCapabilityNegotiator`
+  -- the input `result` is never mutated.
+- Schema checks use the real `jsonschema` library rather than a hand-rolled
+  subset of the spec (added as a new backend dependency --
+  `requirements-base.txt`, `jsonschema>=4.25.0,<5.0.0`, installed into the
+  shared `.venv`; no existing dependency covered this and a partial
+  reimplementation would only ever validate what someone remembered to
+  handle).
+- New `RoleResultRejected(Exception)` and `ensure_committable(result) ->
+  RoleExecutionResult`: the hard gate. Raises unless `result.validated` is
+  `True`; a result's `fallback_strategy` grants no exemption --
+  `TEMPLATE_PROCEDURE` and `ROLE_DEGRADATION` are checked exactly like
+  `NATIVE`, since a degraded role is still asserting claims into cognition.
+  This is the enforcement point a future caller committing a role result to
+  a candidate or action is expected to call; there is no path to
+  commitment within this module that skips it.
+- 19 new tests: the review's exact probe rejected by `ensure_committable`;
+  `allowed_claims` acceptance/rejection (list and dict-with-"claims"
+  shapes) and the fail-closed case where claims are configured but
+  unparseable; `schema_definition` acceptance/rejection via real
+  `jsonschema` errors; `custom_validator` rejection and
+  exception-is-recorded-not-raised; a purity check (`validate_execution_result`
+  returns a new object, leaves the input untouched); and, directly
+  answering the fix's core requirement, both `TEMPLATE_PROCEDURE` and
+  `ROLE_DEGRADATION` results parametrized through the identical
+  reject-until-validated-then-commit sequence as a `NATIVE` result,
+  including a fallback result that still gets rejected for an
+  out-of-scope claim.
+
+### P2: adapter input coercion for malformed upstream payloads
+
+- `app/vision/adapters.py`: `SpatialTrackingVisionAdapter.process()` now
+  routes every list-shaped field through `_coerce_raw_list` (returns `[]`
+  for a missing key, an explicit `None`, or any non-list value -- closing
+  the specific bug the review demonstrated, where a string `track_ids`
+  value silently iterated into one bogus track per character) and, for the
+  four nested-Pydantic-model fields, `_coerce_model_list` (additionally
+  drops any list entry that isn't a mapping, so a stray string or number
+  inside an otherwise-valid list can't crash the `model(**entry)`
+  unpacking). `staleness_ms` on both adapters now goes through
+  `_safe_staleness_ms`, collapsing a missing, non-numeric, negative, or
+  non-finite (NaN/infinite) value to `0.0` instead of raising or silently
+  carrying a nonsensical value forward -- applied to `VLMCaptionVisionAdapter`
+  too, since the original finding described the gap as present in "either
+  adapter."
+- 11 new tests: `None` raw_data at the top level; each list field
+  individually set to `None`; the exact string-splits-into-characters case
+  named by the review; malformed nested entries mixed with well-formed
+  ones (confirms the well-formed entries survive); a parametrized sweep of
+  clearly-malformed whole payloads (wrong types, non-dict raw_data)
+  asserting `process()` never raises; and `staleness_ms` parametrized over
+  NaN, +/-infinity, negative, non-numeric-string, and `None`, plus one
+  confirming a valid positive value is preserved unchanged.
+
+### Verification (fix round)
+
+```
+../../AI_friend/.venv/bin/python -m pytest tests/test_model_roles_vision.py -q
+```
+Result: **123 passed, 0 failed, 0 errors** (60 original + 63 new; verified
+via `--junit-xml`).
+
+```
+../../AI_friend/.venv/bin/python -m ruff check .
+```
+Result: **All checks passed** (three findings surfaced and fixed during
+this round: an implicit-string-concatenation-in-a-list-literal warning in
+`_check_allowed_claims`'s error message, a stale `noqa` comment, and
+`_coerce_model_list`'s `TypeVar`-based generic converted to PEP 695 `def
+_coerce_model_list[ModelT: BaseModel](...)` syntax per ruff's own
+preference for this codebase's inferred target Python version).
+
+```
+../../AI_friend/.venv/bin/python -m radon cc app/ -s -n D
+```
+Result: **no output** -- zero functions at rank D or higher across all
+three changed modules (worst is `VLMCaptionVisionAdapter` and its
+`process` method at B(8)/B(7); everything else is A or low B).
+
+Full backend regression suite: **2,212 passed, 0 failures, 0 errors, 0
+skipped** (up from 2,149 before this round, reflecting the 63 new tests).
+
+Mutation testing (four mutations, each reverted and the working tree
+diffed back to clean before moving on):
+- Disabled the new `scene_deltas` check in `validate_vision_invariants` ->
+  5 of the scene-delta/caption tests failed as expected.
+- Disabled `VLMCaptionVisionAdapter`'s caption sanitizer (the
+  `validate_vision_invariants` backstop still runs inside `process()`) -> 6
+  of the caption tests failed, now via an uncaught `ValueError` from
+  `process()` itself rather than a shape mismatch, confirming the
+  sanitizer and the backstop are doing distinct, both-tested work.
+- Reverted `RoleExecutionResult.validated`'s default back to `True` -> 5 of
+  the gate tests failed as expected.
+- Made `ensure_committable` unconditionally pass (dead code the `if`
+  guarded) -> 4 of the gate/fallback tests failed as expected.
+
+ASCII purity: verified via direct `.decode("ascii")` on all three changed
+source files, the test file, and `requirements-base.txt`.
+
+Dependency change: `jsonschema>=4.25.0,<5.0.0` added to
+`backend/requirements-base.txt` (chained into `requirements-ai.txt` ->
+`requirements.txt`) and installed into the shared
+`/Users/aniketsaha/Projects/AI_friend/.venv`. This is the only file this
+fix round touched outside the four owned files, and it was necessary: no
+existing dependency provides JSON Schema validation, and
+`validate_execution_result`'s schema check needs the real spec rather than
+a hand-rolled subset.
+
+**NOT done (fix round):** `ensure_committable` is defined and tested but
+not yet called from any commitment/candidate path -- that integration
+point does not exist in this phase's scope for model-role results, so the
+gate is enforced structurally (it is the only way to obtain a committable
+result) but not yet wired into a live caller. Package A's corresponding
+fix-round items (legacy migration crash, compiler telemetry completeness,
+`dispatch()` branch coverage, simulated-outcome visibility, `timeout_s`
+enforcement) are Codex's responsibility in `ai-friend-codex`, not addressed
+here.
+
+---
+
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
