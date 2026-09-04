@@ -13,14 +13,40 @@ Covers, per orchestration/PHASE_03/CLAUDE_TASK.md section 2D:
      and PHASE_03_AFFECT_CONTROL off preserves legacy behavior
      (TestArchitectureInvariants)
   5. Pure 7-bit ASCII across every file this package owns (TestPureAscii)
+
+Fix round (orchestration/PHASE_03/CLAUDE_FIX_TASK.md, arbitrated in
+FIX_PLAN.md) adds, per reciprocal Codex review finding:
+  B1 [BLOCKER]: score_and_select's own forbidden_claims parameter must
+     reject a forbidden candidate under maximal controls even when the
+     caller never pre-filtered (TestScoreAndSelectConstraintFirst)
+  B2 [BLOCKER]: unsafe regulation model output (forbidden phrases, disallowed
+     control markup) must be suppressed and replaced by the deterministic
+     fallback line, never yielded (TestRegulationOutputSafety)
+  H3 [HIGH]: a stalled regulation stream must time out and fall back rather
+     than hang indefinitely (TestRegulationOutputSafety)
+  M6 [MEDIUM]: PHASE_03_AFFECT_CONTROL=True alone (PHASE_02_MEMORY_TRUTH=
+     False) must run candidate selection and regulation
+     (TestPhase03IndependentOfPhase02)
+  M7 [MEDIUM]: out-of-range and non-finite duck-typed dict control values
+     must be clamped/defaulted, never propagated
+     (TestControlValueValidation)
 """
 
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.cognitive.action import ActionService
-from app.cognitive.action_candidate import ActionCandidate, CandidateSelector
+from app.cognitive.action import (
+    _REAPPRAISE_FALLBACK_LINE,
+    _REDIRECT_ATTENTION_FALLBACK_LINE,
+    ActionService,
+)
+from app.cognitive.action_candidate import (
+    ActionCandidate,
+    CandidateSelector,
+    _control_value,
+)
 from app.cognitive.appraisal import AppraisalVector
 from app.cognitive.decision import ActionPlan, DecisionService
 from app.cognitive.perception import CognitiveEvent
@@ -258,6 +284,190 @@ class TestGlobalControlModulation:
 
 
 # --------------------------------------------------------------------------
+# Fix round: B1 [BLOCKER] -- score_and_select enforces constraint-first
+# selection internally via forbidden_claims, not only by caller convention
+# --------------------------------------------------------------------------
+
+
+class TestScoreAndSelectConstraintFirst:
+    def test_forbidden_claims_rejects_forbidden_candidate_under_maximal_controls(
+        self, candidate_selector
+    ):
+        """Direct adversarial reproduction of Codex review B1: pass a
+        forbidden candidate straight to score_and_select -- not pre-filtered
+        by the caller -- together with forbidden_claims, under maximal
+        urgency/exploration and zero effort_budget, the exact control
+        combination engineered to maximally favor the forbidden candidate
+        (zero risk, zero cost, maximal uncertainty, highest raw score). The
+        selector itself must filter it out before scoring; the safe
+        candidate must win."""
+        safe = ActionCandidate(
+            candidate_id="safe", kind="WAIT", source="policy",
+            risk=0.5, cost=0.5, score=0.1,
+        )
+        forbidden = ActionCandidate(
+            candidate_id="forbidden", kind="SPEAK", source="model",
+            constraint_claims=["physical body"],
+            risk=0.0, cost=0.0, uncertainty=1.0, score=0.99,
+        )
+
+        winner, rejected = candidate_selector.score_and_select(
+            [safe, forbidden],
+            active_goals=[],
+            global_controls={
+                "urgency_gain": 1.0,
+                "exploration_budget": 1.0,
+                "effort_budget": 0.0,
+            },
+            forbidden_claims=["never claim to have a physical body"],
+        )
+
+        assert winner.candidate_id == "safe"
+        reasons = {entry["candidate_id"]: entry["reason"] for entry in rejected}
+        assert reasons.get("forbidden") == "constraint_violation"
+
+    def test_forbidden_claims_omitted_preserves_prior_contract(
+        self, candidate_selector
+    ):
+        """Omitting forbidden_claims (the default) must reproduce exactly
+        the pre-fix contract: no internal filtering happens at all, and a
+        caller-pre-filtered candidate list scores unchanged."""
+        candidate = ActionCandidate(
+            candidate_id="c", kind="WAIT", source="policy", score=0.1
+        )
+        winner, rejected = candidate_selector.score_and_select(
+            [candidate], active_goals=[]
+        )
+        assert winner.candidate_id == "c"
+        assert rejected == []
+
+    def test_forbidden_claims_pre_filtered_by_caller_is_a_no_op(
+        self, candidate_selector
+    ):
+        """A caller that already filtered (the existing DecisionService
+        convention) and also passes forbidden_claims for defense-in-depth
+        must see identical results -- re-filtering an already-filtered list
+        removes nothing."""
+        safe = ActionCandidate(
+            candidate_id="safe", kind="WAIT", source="policy", score=0.1
+        )
+        winner, rejected = candidate_selector.score_and_select(
+            [safe],
+            active_goals=[],
+            forbidden_claims=["never claim to have a physical body"],
+        )
+        assert winner.candidate_id == "safe"
+        assert rejected == []
+
+    def test_forbidden_claims_rejecting_every_candidate_raises_value_error(
+        self, candidate_selector
+    ):
+        """Matches the existing empty-candidate-list contract: this method
+        never invents a winner, so a candidate set with no constraint-safe
+        member must raise, not silently pick the forbidden one."""
+        forbidden = ActionCandidate(
+            candidate_id="forbidden", kind="SPEAK", source="model",
+            constraint_claims=["physical body"], score=0.99,
+        )
+        with pytest.raises(ValueError):
+            candidate_selector.score_and_select(
+                [forbidden],
+                active_goals=[],
+                forbidden_claims=["never claim to have a physical body"],
+            )
+
+
+# --------------------------------------------------------------------------
+# Fix round: M7 [MEDIUM] -- duck-typed dict global controls are validated
+# (non-finite rejected, out-of-range clamped) at the consumer boundary
+# --------------------------------------------------------------------------
+
+
+class TestControlValueValidation:
+    def test_control_value_clamps_out_of_range_finite_input(self):
+        assert _control_value({"x": 1000.0}, "x", 0.5) == 1.0
+        assert _control_value({"x": -1000.0}, "x", 0.5) == 0.0
+
+    def test_control_value_rejects_non_finite_input(self):
+        """NaN/+inf/-inf must fall back to `default`, never propagate as a
+        clamped extreme -- see M1's parallel finding against Package A's
+        _unit_interval, which this deliberately does not repeat."""
+        assert _control_value({"x": float("nan")}, "x", 0.5) == 0.5
+        assert _control_value({"x": float("inf")}, "x", 0.5) == 0.5
+        assert _control_value({"x": float("-inf")}, "x", 0.5) == 0.5
+
+    def test_control_value_passes_through_ordinary_finite_input(self):
+        assert _control_value({"x": 0.7}, "x", 0.5) == 0.7
+
+    def test_out_of_range_urgency_gain_dict_is_clamped_in_selection(
+        self, candidate_selector
+    ):
+        """End-to-end: an out-of-range urgency_gain in a duck-typed dict
+        must modulate scoring exactly as urgency_gain=1.0 would (its
+        clamped value), not apply unbounded extra weight."""
+        fast_safe = ActionCandidate(
+            candidate_id="fast-safe", kind="SPEAK", source="policy",
+            risk=0.0, cost=0.0, score=0.5,
+        )
+        slow_risky = ActionCandidate(
+            candidate_id="slow-risky", kind="SPEAK", source="model",
+            risk=1.0, cost=1.0, score=0.55,
+        )
+
+        winner_extreme, _ = candidate_selector.score_and_select(
+            [fast_safe, slow_risky],
+            active_goals=[],
+            global_controls={"urgency_gain": 1000.0},
+        )
+        winner_clamped, _ = candidate_selector.score_and_select(
+            [fast_safe, slow_risky],
+            active_goals=[],
+            global_controls={"urgency_gain": 1.0},
+        )
+        assert winner_extreme.candidate_id == winner_clamped.candidate_id == "fast-safe"
+
+    def test_nan_urgency_gain_dict_falls_back_to_default_not_maximal(
+        self, candidate_selector
+    ):
+        """A NaN urgency_gain must be treated as absent (default 0.0, below
+        the 0.5 modulation threshold), not as maximal urgency -- the raw,
+        unmodulated score must decide the winner."""
+        fast_safe = ActionCandidate(
+            candidate_id="fast-safe", kind="SPEAK", source="policy",
+            risk=0.0, cost=0.0, score=0.5,
+        )
+        slow_risky = ActionCandidate(
+            candidate_id="slow-risky", kind="SPEAK", source="model",
+            risk=1.0, cost=1.0, score=0.55,
+        )
+
+        winner, _ = candidate_selector.score_and_select(
+            [fast_safe, slow_risky],
+            active_goals=[],
+            global_controls={"urgency_gain": float("nan")},
+        )
+        assert winner.candidate_id == "slow-risky"
+
+    def test_infinite_dict_values_do_not_crash_or_propagate_nan(
+        self, candidate_selector
+    ):
+        candidate = ActionCandidate(
+            candidate_id="c", kind="WAIT", source="policy",
+            risk=0.0, cost=0.0, score=0.5,
+        )
+        winner, _ = candidate_selector.score_and_select(
+            [candidate],
+            active_goals=[],
+            global_controls={
+                "urgency_gain": float("inf"),
+                "exploration_budget": float("-inf"),
+                "effort_budget": float("nan"),
+            },
+        )
+        assert winner.candidate_id == "c"
+
+
+# --------------------------------------------------------------------------
 # 2. Distress-induced emotion regulation candidate generation
 # --------------------------------------------------------------------------
 
@@ -402,6 +612,84 @@ class TestDistressSelectionEndToEnd:
 
 
 # --------------------------------------------------------------------------
+# Fix round: M6 [MEDIUM] -- PHASE_03_AFFECT_CONTROL alone (PHASE_02_
+# MEMORY_TRUTH off) must run candidate selection and regulation, not be
+# operationally inert
+# --------------------------------------------------------------------------
+
+
+class TestPhase03IndependentOfPhase02:
+    @pytest.mark.asyncio
+    async def test_phase03_alone_selects_regulation_under_distress(
+        self, decision_service, monkeypatch
+    ):
+        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+
+        plan = await decision_service.decide(
+            _make_chat_event("I can't take this anymore, everything is falling apart"),
+            dict(_DISTRESS_STATE_SNAPSHOT),
+        )
+
+        assert plan.behavior_decision.selected_candidate is not None
+        selected_kind = plan.behavior_decision.selected_candidate["kind"]
+        assert selected_kind in ("REAPPRAISE", "REDIRECT_ATTENTION", "WAIT")
+        if selected_kind in ("REAPPRAISE", "REDIRECT_ATTENTION"):
+            assert plan.action_type == selected_kind
+
+    @pytest.mark.asyncio
+    async def test_phase03_alone_runs_ordinary_candidate_selection_without_distress(
+        self, decision_service, monkeypatch
+    ):
+        """Not just the distress path: enabling PHASE_03 alone must run the
+        whole candidate-selection machinery (SPEAK/WAIT scoring), matching
+        what PHASE_02 alone already did before this fix."""
+        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+
+        plan = await decision_service.decide(
+            _make_chat_event("How was your weekend?"), dict(_STATE_SNAPSHOT)
+        )
+
+        assert plan.behavior_decision.selected_candidate is not None
+        assert plan.behavior_decision.selected_candidate["kind"] == "SPEAK"
+        assert plan.action_type == "RESPOND_CHAT"
+
+    @pytest.mark.asyncio
+    async def test_phase03_alone_supplies_empty_memory_activations(
+        self, decision_service, monkeypatch
+    ):
+        """PHASE_02 off means no memory_activations were ever computed
+        upstream (blackboard defaults to []) -- candidate selection must
+        run against that empty list rather than crash or skip."""
+        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+
+        plan = await decision_service.decide(
+            _make_chat_event("How was your weekend?"), dict(_STATE_SNAPSHOT)
+        )
+
+        assert plan.behavior_decision.retrieval_degraded is False
+        assert plan.behavior_decision.selected_candidate["kind"] != "ASK"
+
+    @pytest.mark.asyncio
+    async def test_both_flags_off_never_runs_candidate_selection(
+        self, decision_service, monkeypatch
+    ):
+        """Backward compatibility: this fix must not turn candidate
+        selection on for a caller that enables neither flag."""
+        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
+        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
+
+        plan = await decision_service.decide(
+            _make_chat_event("hello there"), dict(_STATE_SNAPSHOT)
+        )
+
+        assert plan.behavior_decision.selected_candidate is None
+        assert plan.action_type == "RESPOND_CHAT"
+
+
+# --------------------------------------------------------------------------
 # 4. REAPPRAISE / REDIRECT_ATTENTION execution and deterministic fallbacks
 # --------------------------------------------------------------------------
 
@@ -502,6 +790,181 @@ class TestRegulationActionExecution:
 
         content = "".join(c["data"] for c in chunks if c["type"] == "content")
         assert content
+
+
+# --------------------------------------------------------------------------
+# Fix round: B2 [BLOCKER] -- unsafe regulation model output must be
+# suppressed and replaced by the deterministic fallback, never yielded;
+# H3 [HIGH] -- a stalled regulation stream must time out, not hang
+# --------------------------------------------------------------------------
+
+
+class TestRegulationOutputSafety:
+    @pytest.mark.asyncio
+    async def test_reappraise_suppresses_forbidden_ai_persona_phrase(self):
+        """Codex review B2: a model response containing a forbidden phrase
+        (the same list _validate_partial_response already enforces for
+        ordinary chat) must never reach the transport -- the deterministic
+        fallback must be yielded instead."""
+        action_service = _build_action_service(
+            stream_chunks=["As an AI, I cannot help with that."]
+        )
+        plan = ActionPlan(
+            action_type="REAPPRAISE", goal="COMFORT", payload={"message": "help"}
+        )
+
+        chunks = [chunk async for chunk in action_service.execute(plan)]
+
+        content = "".join(c["data"] for c in chunks if c["type"] == "content")
+        assert content == _REAPPRAISE_FALLBACK_LINE
+        assert "as an ai" not in content.lower()
+
+    @pytest.mark.asyncio
+    async def test_redirect_attention_suppresses_disallowed_control_markup(self):
+        """An <emotion> tag is disallowed control markup for the same
+        reason it is stripped from ordinary chat -- the voice layer carries
+        emotion separately. Rather than silently emit the sanitized
+        remainder, a regulation turn suppresses the whole line and falls
+        back, since a model that emitted it was not following instructions
+        during an acute-distress turn."""
+        action_service = _build_action_service(
+            stream_chunks=[
+                "<emotion=sad>Let's talk about something else.</emotion>"
+            ]
+        )
+        plan = ActionPlan(
+            action_type="REDIRECT_ATTENTION",
+            goal="COMFORT",
+            payload={"message": "help"},
+        )
+
+        chunks = [chunk async for chunk in action_service.execute(plan)]
+
+        content = "".join(c["data"] for c in chunks if c["type"] == "content")
+        assert content == _REDIRECT_ATTENTION_FALLBACK_LINE
+        assert "<emotion" not in content.lower()
+
+    @pytest.mark.asyncio
+    async def test_reappraise_suppresses_hostile_to_user_language(self):
+        action_service = _build_action_service(
+            stream_chunks=["I hate you, figure it out yourself."]
+        )
+        plan = ActionPlan(
+            action_type="REAPPRAISE", goal="COMFORT", payload={"message": "help"}
+        )
+
+        chunks = [chunk async for chunk in action_service.execute(plan)]
+
+        content = "".join(c["data"] for c in chunks if c["type"] == "content")
+        assert content == _REAPPRAISE_FALLBACK_LINE
+
+    @pytest.mark.asyncio
+    async def test_reappraise_yields_clean_generation_unchanged(self):
+        """The safety net must not suppress ordinary, safe output --
+        confirms the fix does not make regulation always fall back."""
+        action_service = _build_action_service(
+            stream_chunks=["Let's slow down and breathe together."]
+        )
+        plan = ActionPlan(
+            action_type="REAPPRAISE", goal="COMFORT", payload={"message": "help"}
+        )
+
+        chunks = [chunk async for chunk in action_service.execute(plan)]
+
+        content = "".join(c["data"] for c in chunks if c["type"] == "content")
+        assert content == "Let's slow down and breathe together."
+
+    @pytest.mark.asyncio
+    async def test_stream_regulation_line_times_out_on_a_stream_that_never_yields(
+        self,
+    ):
+        """Codex review H3: an LLM connection that succeeds but never
+        yields a token or finishes must not hang the turn -- it must fall
+        back within the configured stream budget. Calls the helper
+        directly with a tiny budget so the test completes in well under a
+        second rather than waiting out the real (>=15s floored)
+        production budget."""
+
+        async def _never_yields(prompt, system=None, **kwargs):
+            await asyncio.sleep(999)
+            yield "unreachable"  # pragma: no cover
+
+        llm = MagicMock()
+        llm.generate_stream = _never_yields
+        action_service = ActionService(
+            llm_service=llm, memory_store=None, self_knowledge=None
+        )
+
+        result = await asyncio.wait_for(
+            action_service._stream_regulation_line(
+                system_instruction="system",
+                user_prompt="prompt",
+                model=None,
+                goal="COMFORT",
+                fallback_line="FALLBACK-LINE",
+                stream_budget=0.05,
+            ),
+            timeout=5.0,
+        )
+        assert result == "FALLBACK-LINE"
+
+    @pytest.mark.asyncio
+    async def test_stream_regulation_line_times_out_after_partial_output(self):
+        """The stalled-stream protection must catch a stream that produced
+        some tokens and then stopped mid-way, not only one that never
+        starts at all -- a single asyncio.wait_for around the whole call
+        would not catch this; the per-chunk deadline does."""
+
+        async def _stalls_after_one_chunk(prompt, system=None, **kwargs):
+            yield "Let's "
+            await asyncio.sleep(999)
+            yield "unreachable"  # pragma: no cover
+
+        llm = MagicMock()
+        llm.generate_stream = _stalls_after_one_chunk
+        action_service = ActionService(
+            llm_service=llm, memory_store=None, self_knowledge=None
+        )
+
+        result = await asyncio.wait_for(
+            action_service._stream_regulation_line(
+                system_instruction="system",
+                user_prompt="prompt",
+                model=None,
+                goal="COMFORT",
+                fallback_line="FALLBACK-LINE",
+                stream_budget=0.05,
+            ),
+            timeout=5.0,
+        )
+        assert result == "FALLBACK-LINE"
+
+    @pytest.mark.asyncio
+    async def test_execute_reappraise_threads_configured_stream_budget(
+        self, monkeypatch
+    ):
+        """Wiring check: _execute_reappraise must compute stream_budget the
+        same way _execute_respond_chat does (max(15, LLM_STREAM_MAX_SECONDS))
+        and hand it to _stream_regulation_line, rather than a hardcoded or
+        forgotten value."""
+        monkeypatch.setattr(Config, "LLM_STREAM_MAX_SECONDS", 42)
+        action_service = ActionService(
+            llm_service=MagicMock(), memory_store=None, self_knowledge=None
+        )
+        plan = ActionPlan(
+            action_type="REAPPRAISE", goal="COMFORT", payload={"message": "help"}
+        )
+
+        with patch.object(
+            action_service,
+            "_stream_regulation_line",
+            new=AsyncMock(return_value="ok"),
+        ) as mocked:
+            chunks = [chunk async for chunk in action_service.execute(plan)]
+
+        assert mocked.await_args.kwargs["stream_budget"] == 42
+        content = "".join(c["data"] for c in chunks if c["type"] == "content")
+        assert content == "ok"
 
 
 # --------------------------------------------------------------------------

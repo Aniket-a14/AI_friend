@@ -807,7 +807,18 @@ class DecisionService:
         action_type = "RESPOND_CHAT"
         clarification_subject: str | None = None
 
-        if Config.PHASE_02_MEMORY_TRUTH:
+        # Fix round (Codex review M6 - medium): candidate selection used to
+        # be nested only under Config.PHASE_02_MEMORY_TRUTH, which made
+        # Config.PHASE_03_AFFECT_CONTROL operationally inert on its own --
+        # an operator who set only the Phase 03 flag (as its own config
+        # comment invites) got no modulation and no regulation candidates
+        # at all. Phase 03 depends on the candidate-selection machinery
+        # Phase 02 introduced, but that dependency must not be a second,
+        # undocumented flag gate: either flag alone now reaches this
+        # branch. `memory_activations` defaults to `[]` when Phase 02 is
+        # off (blackboard already normalizes it to `[]`, never `None`, so
+        # this is the exact legacy value Phase 02-off callers always saw).
+        if Config.PHASE_02_MEMORY_TRUTH or Config.PHASE_03_AFFECT_CONTROL:
             memory_activations = blackboard.get("memory_activations") or []
             behavior_decision = self._select_action_candidate(
                 behavior_decision,
@@ -1027,12 +1038,22 @@ class DecisionService:
             # defensive floor, not an expected path.
             survivors = [c for c in candidates if c.kind == "WAIT"] or candidates
 
+        # Fix round (Codex review B1 - blocker): `survivors` was already
+        # filtered above, so passing `forbidden_claims` here too is
+        # normally a no-op re-filter -- but it makes this call defend
+        # itself rather than relying solely on the pre-filtering above,
+        # which is exactly the gap the review found in the public selector
+        # API. It also converts the pathological "no WAIT candidate
+        # exists at all" fallback three lines up (which would otherwise
+        # silently re-admit a forbidden candidate) into a raised
+        # ValueError instead of a silent constraint violation.
         winner, score_rejected = self._candidate_selector.score_and_select(
             survivors,
             active_goals=[goal],
             global_controls=(
                 global_controls if Config.PHASE_03_AFFECT_CONTROL else None
             ),
+            forbidden_claims=forbidden_claims,
         )
 
         retrieval_degraded = any(
