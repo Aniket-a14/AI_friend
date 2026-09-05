@@ -16837,3 +16837,57 @@ clean dependency reinstall, live hardware/GPU benchmarks, merge, push, or
 final post-cleanup system audit. Gemini's uncommitted primary-worktree edits
 were inspected as guidance and were not imported or modified. Existing
 mypy/Bandit findings and historical benchmark provenance remain unchanged.
+
+## 2026-09-05 -- Merged Claude doc/website cleanup and Codex engineering
+cleanup into main
+
+Both `claude/repo-cleanup` (commit `b7843a1`) and `codex/engineering-cleanup`
+(commit `6fbcd17`) branched from the same baseline (`7a7626f`) and were merged
+into `main` in that order: Codex's structural changes first (fast-forward,
+no conflicts), then Claude's doc/website/comment changes on top.
+
+Three files conflicted and were resolved by hand rather than trusting git's
+auto-resolution:
+
+- `backend/app/config.py`: two separate issues, not one. First, the direct
+  conflict on `MEMORY_TRUTH_ENABLED`/`AFFECT_CONTROL_ENABLED` was resolved in
+  favor of Codex's `AliasChoices`-based fields over Gemini's older
+  bidirectional-property version (matches this file's own F4 guidance:
+  prefer proper aliasing over `ConfigMeta.__getattr__` logic). Second, and
+  more importantly, git's merge left **unconflicted but now-broken** dead
+  code outside the conflict markers: a `set_defaults` block manually
+  syncing `PHASE_02_MEMORY_TRUTH`/`PHASE_03_AFFECT_CONTROL` as if they were
+  still separate model fields, and matching special-casing inside
+  `ConfigMeta.__getattr__`. Both blocks referenced fields Codex's change had
+  already removed; left in place they would have been silent no-ops (or
+  worse, set untracked instance attributes) rather than errors, since
+  neither branch's diff touched those exact lines so git never flagged
+  them. Both were deleted. This is the second time in this cleanup round
+  that a clean "Auto-merging" message did not mean the result was correct —
+  worth remembering before trusting one on this file again.
+- `backend/app/cognitive/decision.py`: three hunks, all comment-only.
+  Preferred whichever side had already dropped "Phase 0X Package B"
+  wording; where both sides had rewritten the same comment differently,
+  merged the more complete explanation (Codex's cross-reference to the
+  `MEMORY_TRUTH_ENABLED` gating pattern) with the shorter, phase-free
+  phrasing. Note for whoever does the next pass: plenty of other "Phase 0X
+  Package B" comments remain in this file untouched (lines ~383, 388, 395,
+  848, 873, 924, 937 as of this merge) — neither branch's diff touched
+  them, so they survived unflagged. Not fixed here; that's a fresh cleanup
+  pass, not a merge-conflict resolution.
+- `backend/tests/test_planning_simulation.py`: Codex's side hardcoded
+  `orchestration/archive/phase_06/CODEX_RESULT.md` into the checked-paths
+  list; Claude's side relied solely on the existing dynamic
+  `codex_result.exists()` fallback resolution a few lines above (which
+  already resolves to the same archived path). Took Claude's side —
+  the hardcoded entry was redundant, not a correction.
+
+Verification after resolving: `py_compile` and `ruff check .` on the touched
+files, then the full backend suite via `--junit-xml` (2,395 passed, 0
+failed, 0 errors, 63.0s — matching both branches' pre-merge numbers), and
+`website && npm run build` (38/38 pages, confirming the merge didn't touch
+anything Codex's side changed, since Codex made no website edits).
+
+NOT done: reconciling the ~7 other stale "Phase 0X Package B" comments noted
+above in `decision.py`; those were out of scope for a merge (neither branch's
+diff reached them) and are flagged for a future pass, not fixed here.
