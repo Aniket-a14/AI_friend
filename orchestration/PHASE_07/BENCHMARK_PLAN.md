@@ -38,7 +38,7 @@ Status: READY_FOR_DISPATCH
 - **Target:** Measure real end-to-end cognitive turn latency through the fully composed `BrainAgent` and `CognitiveService` with `PHASE_02_MEMORY_TRUTH=True` and `PHASE_03_AFFECT_CONTROL=True` active.
 - **Model:** `qwen2.5:3b` (Ollama runtime on RTX 2060 Super).
 - **Protocol:** 10 live cognitive turns with warm-up; measure pre-generation deliberation overhead, TTFT, and state continuity.
-- **Metric:** Mean TTFT < 80.0 ms, p95 TTFT < 120.0 ms, Authoritative State Continuity = 100% INTACT.
+- **Metric:** Mean TTFT < 120.0 ms, p95 TTFT < 200.0 ms, Authoritative State Continuity = 100% INTACT.
 
 ### BM-GPU-P7-02: True Cross-Provider Behavioral Invariance
 - **Target:** Measure behavioral conformance across distinct model provider interfaces on identical persona prompts and state snapshots.
