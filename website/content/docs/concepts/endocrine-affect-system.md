@@ -1,6 +1,6 @@
-# Endocrine & Affect Biology
+# Endocrine & Affect Simulation
 
-Unlike standard chatbots that rely on static text prompts, AI Friend incorporates an **internal neurobiological simulation**. Internal affective states change how the LLM generates tokens in real time.
+Unlike standard chatbots that rely on static text prompts, AI Friend incorporates an **internal neurochemical simulation**. Internal affective states change how the LLM generates tokens in real time.
 
 ---
 
@@ -10,19 +10,19 @@ The endocrine engine tracks two primary neurochemicals: **Cortisol** (stress/cau
 
 $$\text{Hormone}(t) = \text{Tonic}(t) + \text{Phasic}(t)$$
 
-### 1. Tonic Channel (Slow Biological Baseline)
+### 1. Tonic Channel (Affective Baseline)
 The tonic baseline reflects long-term emotional equilibrium and is derived continuously from the 3D PAD (Pleasure, Arousal, Dominance) space:
 
 $$\text{Tonic}_{\text{Cortisol}} = \text{clamp}\left(0.5 - 0.5 \cdot \text{Valence} + 0.3 \cdot \text{Arousal}, 0.0, 1.0\right)$$
 $$\text{Tonic}_{\text{Dopamine}} = \text{clamp}\left(0.5 + 0.5 \cdot \text{Valence} + 0.4 \cdot \text{Arousal}, 0.0, 1.0\right)$$
 
 ### 2. Phasic Channel (Decaying Event-Driven Bursts)
-Phasic bursts are triggered by conversational events (e.g. insults, achievements, praise, long pauses) and decay exponentially according to their biological half-lives:
+Phasic bursts are triggered by conversational events (e.g. insults, achievements, praise, long pauses) and decay exponentially according to their calibrated half-lives:
 
 $$\text{Phasic}(t) = \text{Phasic}_0 \cdot e^{-\lambda t} \quad \text{where } \lambda = \frac{\ln(2)}{t_{1/2}}$$
 
 * **Dopamine Half-Life ($t_{1/2}$)**: $90\text{ seconds}$ (Rapid reward spike and decay).
-* **Cortisol Half-Life ($t_{1/2}$)**: $600\text{ seconds}$ (Prolonged stress persistence).
+* **Cortisol Half-Life ($t_{1/2}$)**: $4500\text{ seconds}$ (Prolonged stress persistence, ~75 minutes).
 
 Because phasic channels operate independently of anti-correlated tonic baselines, the agent can experience realistic complex emotions, such as being **simultaneously stressed and rewarded**.
 

@@ -15,7 +15,7 @@ Visual appraisal uses the lightweight **Moondream** model running locally via Ol
 
 ## The Habituation Filter
 
-Running a continuous vision model on every video frame wastes compute and fills memory with repetitive descriptions. AI Friend implements a **biological habituation filter**:
+Running a continuous vision model on every video frame wastes compute and fills memory with repetitive descriptions. AI Friend implements a **perceptual habituation filter**:
 
 ```mermaid
 graph LR

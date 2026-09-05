@@ -61,10 +61,9 @@ _RELATIONAL_STANCES: tuple[str, ...] = ("distant", "guarded", "neutral", "warm",
 # reflex, rather than reintroducing a second threshold with different logic.
 _REFLEX_URGENCY_THRESHOLD = 0.75
 
-# Phase 02 Package B: a MemoryActivation at or above this relevance, whose
+# Memory activation disputation threshold: a MemoryActivation at or above this relevance, whose
 # contradiction_state is not "NONE", is treated as active memory disputing
-# what the turn is about to assert -- reason enough to propose ASK (clarify)
-# as a candidate rather than only SPEAK.
+# what the turn is about to assert -- proposing ASK (clarify) as a candidate.
 _HIGH_RELEVANCE_THRESHOLD = 0.75
 
 # Baseline scores for the two candidates decide() always generates. WAIT is
@@ -79,10 +78,9 @@ _WAIT_FALLBACK_SCORE = 0.1
 _ASK_BASE_SCORE = 0.6
 _ASK_RELEVANCE_BONUS = 0.3
 
-# Phase 03 Package B: acute distress thresholds for emotion-regulation
-# candidate generation (Architecture Sections 9, 10, 21, 38). Both must hold
-# together -- a strongly negative mood alone is ordinary low mood, not the
-# acute, aroused distress regulation candidates exist to interrupt.
+# Acute distress thresholds for emotion-regulation candidate generation.
+# Both must hold together -- a strongly negative mood alone is ordinary low mood,
+# not the acute, aroused distress regulation candidates exist to address.
 _DISTRESS_VALENCE_THRESHOLD = -0.5
 _DISTRESS_AROUSAL_THRESHOLD = 0.4
 
@@ -267,8 +265,7 @@ class DecisionService:
         # `_score_goals_maut` updates a utility.
         self.agent_name = agent_name
         self._weights_store = weights_store or AdaptiveWeightsStore()
-        # Phase 02 Package B: constraint-first candidate filtering/scoring,
-        # only exercised when Config.PHASE_02_MEMORY_TRUTH is True.
+        # Constraint-first candidate filtering and scoring selector
         self._candidate_selector = CandidateSelector()
 
         # Intent Persistence (Section 3.2)
@@ -818,18 +815,11 @@ class DecisionService:
         action_type = "RESPOND_CHAT"
         clarification_subject: str | None = None
 
-        # Fix round (Codex review M6 - medium): candidate selection used to
-        # be nested only under Config.PHASE_02_MEMORY_TRUTH, which made
-        # Config.PHASE_03_AFFECT_CONTROL operationally inert on its own --
-        # an operator who set only the Phase 03 flag (as its own config
-        # comment invites) got no modulation and no regulation candidates
-        # at all. Phase 03 depends on the candidate-selection machinery
-        # Phase 02 introduced, but that dependency must not be a second,
-        # undocumented flag gate: either flag alone now reaches this
-        # branch. `memory_activations` defaults to `[]` when Phase 02 is
-        # off (blackboard already normalizes it to `[]`, never `None`, so
-        # this is the exact legacy value Phase 02-off callers always saw).
-        if Config.PHASE_02_MEMORY_TRUTH or Config.PHASE_03_AFFECT_CONTROL:
+        # Candidate selection: executed when memory truth or affect control is enabled.
+        # Either flag alone reaches this branch so candidate-driven selection functions
+        # consistently across configurations. `memory_activations` defaults to `[]` when
+        # memory truth is disabled.
+        if Config.MEMORY_TRUTH_ENABLED or Config.AFFECT_CONTROL_ENABLED:
             memory_activations = blackboard.get("memory_activations") or []
             behavior_decision = self._select_action_candidate(
                 behavior_decision,
@@ -1022,18 +1012,13 @@ class DecisionService:
         whether any considered memory activation reported a retrieval
         outage.
 
-        Phase 03 Package B: `state_snapshot` feeds acute-distress detection
-        in `_build_candidates`; `global_controls` is forwarded to
-        `score_and_select` only when `Config.PHASE_03_AFFECT_CONTROL` is
-        True, so global-control modulation can never affect ranking while
-        the flag is off, matching this repo's existing PHASE_02_MEMORY_TRUTH
-        gating pattern. Both are optional and additive -- omitting them
-        reproduces exact prior behavior.
+        `state_snapshot` feeds acute-distress detection in `_build_candidates`;
+        `global_controls` is forwarded to `score_and_select` when affect control is
+        enabled, so global-control modulation only affects ranking when configured.
+        Both are optional and additive -- omitting them reproduces default prior behavior.
 
-        `metacognitive_directive` and `privacy_filter` (Phase 04 Package B)
-        pass straight through to `score_and_select`, unconditionally --
-        their own defaults ("PROCEED", None) are what make them no-ops for
-        every caller that does not set them.
+        `metacognitive_directive` and `privacy_filter` pass straight through to
+        `score_and_select` unconditionally with safe default fallbacks ("PROCEED", None).
         """
         forbidden_claims = list(self._immutable_core().get("boundaries", []))
         candidates = self._build_candidates(

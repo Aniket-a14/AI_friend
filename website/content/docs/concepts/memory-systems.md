@@ -1,6 +1,6 @@
 # Memory Systems & Learned Mental Lexicon
 
-AI Friend implements a multi-tier, biologically grounded memory architecture inspired by John R. Anderson's **ACT-R Cognitive Architecture** and semantic spreading activation networks.
+AI Friend implements a multi-tier cognitive memory architecture inspired by John R. Anderson's **ACT-R Cognitive Architecture** and semantic spreading activation networks.
 
 ---
 

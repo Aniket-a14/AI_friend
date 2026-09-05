@@ -21,7 +21,7 @@ export default function ResearchPage() {
             The Science of Synthetic Companionship
           </h1>
           <p className="text-base text-black/50 leading-relaxed max-w-2xl">
-            A deep-dive into the cognitive architectures, neurobiological simulation equations, and memory decay formulas underlying AI Friend.
+            A deep-dive into the cognitive architectures, affect-dynamics equations, and memory decay formulas underlying AI Friend.
           </p>
         </div>
 

@@ -163,12 +163,8 @@ class SpeechExpressionWire(BaseModel):
     breath: float = 0.0
     hesitation: float = 0.0
     style: str = "neutral"
-    # Stage 3 fix: was `list[float]` -- couldn't hold Codex's Phase 3A
-    # `SpeechExpression.trajectory`, which preserves `generate_apra_trajectory`'s
-    # native `(time_offset_ms, rate, pitch, volume)` frame tuples verbatim (the
-    # identity check `derive_speech_expression`'s own tests assert on). A flat
-    # float list rejected every frame on `.model_validate()` with `Input should
-    # be a valid number` -- confirmed reproducible in Stage 2 review.
+    # Preserves generate_apra_trajectory's native (time_offset_ms, rate, pitch, volume)
+    # frame tuples verbatim for prosody realization.
     trajectory: list[tuple[int, float, float, float]] = Field(default_factory=list)
 
 
@@ -258,9 +254,8 @@ class AudioResume(BaseModel):
     reason: str = "conflict_rejected"
     perception_text: str | None = None
     utterance_id: str | None = None
-    # Phase 2D (§15 item 8): mirrors AudioStop.turn_id above -- makes resume
-    # turn-scoped symmetrically with stop (ground truth: AudioStop was
-    # already turn-scoped, AudioResume was the one gap).
+    # Turn-scoped symmetrically with AudioStop.turn_id to ensure resumes target
+    # the exact active utterance context.
     turn_id: str | None = None
 
 
@@ -372,11 +367,8 @@ class StateUpdate(BaseModel):
     adrenaline: float = 0.0
     fatigue: float = 0.0
     user_mental_model: dict[str, Any] | None = None
-    # Phase 2A (§15 item 2): informational here -- the actual compare-and-
-    # swap guard runs on `state.broadcast`'s raw dict in
-    # `AgentState.apply_external_state`, not on this model. Carried on this
-    # wire too so a future `state.update` consumer isn't blind to which
-    # revision/process it's looking at.
+    # Informational revision and writer identifier carried over state.update for
+    # end-to-end tracing across background agents.
     revision: int = 0
     writer_id: str = ""
 

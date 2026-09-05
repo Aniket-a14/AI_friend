@@ -77,8 +77,9 @@ about before you read the rest:
   once real conversation exists.
 - **Timing is physically synthesized, not scripted.** Pauses, barge-in
   ducking, and prosody shifts are rendered as real PCM sample manipulation in
-  a Rust voice pipeline (overlap-add crossfades, a comb-filter reverb blend by
-  user distance) — not text markers a model was asked to insert.
+  a Rust voice pipeline (sample-accurate chunk reassembly, a comb-filter
+  reverb blend by user distance) — not text markers a model was asked to
+  insert.
 
 None of this is marketed as state-of-the-art against commercial systems — see
 `.agents/CONTEXT.md` for what's actually been measured, what's estimated, and
@@ -245,8 +246,9 @@ Full deep-dive: see the Architecture section in [`CLAUDE.md`](CLAUDE.md).
   of goal alignment, emotional fit, identity fit, and context relevance.
 - **Prosody.** Speaking rate, pitch, volume, and pause bias are continuous
   functions of PAD state, fatigue, and estimated user distance, computed in
-  Rust and cross-faded sample-accurately (10ms overlap-add window) across
-  prosody-shift boundaries so there's no audible click.
+  Rust and applied at clean chunk boundaries — an earlier cross-fade at
+  prosody-shift boundaries was removed after it re-played audio the listener
+  had already heard.
 
 ## Voice
 

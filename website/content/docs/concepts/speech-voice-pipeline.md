@@ -45,4 +45,4 @@ Voice synthesis is powered by a dedicated self-hosted **GPT-SoVITS** engine emit
 `voice-agent` extracts acoustic energy and phonetic viseme identifiers in real time, publishing frames to `audio.playback.visemes`.
 
 * `transport_agent` forwards viseme packets over LiveKit WebRTC data channels.
-* The frontend web client renders a pulsing biological aura in `AssistantCircle.jsx` that pulses in synchronization with actual speech acoustics.
+* The frontend web client renders a pulsing aura in `AssistantCircle.jsx` that pulses in synchronization with actual speech acoustics.

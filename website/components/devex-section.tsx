@@ -28,7 +28,7 @@ const STEPS = [
     file: "terminal",
     lang: "bash",
     code: [
-      { type: "comment", text: "# The Phase 2 CLI wizard" },
+      { type: "comment", text: "# The interactive companion CLI wizard" },
       { type: "command", text: "cd backend" },
       { type: "command", text: "../.venv/bin/python -m scripts.create_friend" },
       { type: "gap" },

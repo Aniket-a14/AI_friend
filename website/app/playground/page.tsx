@@ -74,8 +74,8 @@ export default function PlaygroundPage() {
           {activeTab === "persona" && (
             <ComingSoonOverlay
               title="COMING SOON"
-              description="The interactive in-browser Persona Compiler and live dry-run simulator is currently in active development for Phase 8. Full UI layout is previewed below."
-              eta="Roadmap v7.1"
+              description="The interactive in-browser Persona Compiler and live dry-run simulator is currently in active development for the web sandbox preview. Full UI layout is previewed below."
+              eta="Roadmap Preview"
               blurAmount="md"
             >
               <PersonaCompilerDemo />
@@ -86,7 +86,7 @@ export default function PlaygroundPage() {
             <ComingSoonOverlay
               title="COMING SOON"
               description="The 32kHz neural voice player and emotional prosody testing lab is in active development. Audio sandbox layout previewed below."
-              eta="Roadmap v7.1"
+              eta="Roadmap Preview"
               blurAmount="md"
             >
               <VoiceShowcase />
@@ -96,8 +96,8 @@ export default function PlaygroundPage() {
           {activeTab === "webgpu" && (
             <ComingSoonOverlay
               title="COMING SOON"
-              description="Zero-install in-browser WebGPU inference for Llama 3.2 1B and GPT-SoVITS voice synthesis is currently in active development for Phase 8."
-              eta="Roadmap v7.2"
+              description="Zero-install in-browser WebGPU inference for Llama 3.2 1B and GPT-SoVITS voice synthesis is currently in active development for the web sandbox preview."
+              eta="Roadmap Preview"
               blurAmount="md"
             >
               <div className="rounded-2xl border border-black/[0.08] bg-white p-8 space-y-6">
@@ -133,7 +133,7 @@ export default function PlaygroundPage() {
             <ComingSoonOverlay
               title="COMING SOON"
               description="Interactive 3D Three.js force-directed knowledge graph visualizer and learned mental lexicon explorer."
-              eta="Roadmap v7.1"
+              eta="Roadmap Preview"
               blurAmount="md"
             >
               <div className="rounded-2xl border border-black/[0.08] bg-white p-8 space-y-6">

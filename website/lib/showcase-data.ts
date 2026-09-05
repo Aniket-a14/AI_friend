@@ -34,7 +34,7 @@ export interface PersonaPreset {
 export interface CompanionRecipe {
   id: string
   title: string
-  category: "Memory Seeding" | "Voice Cloned Intimacy" | "Biological Bonding" | "Proactive Presence"
+  category: "Memory Seeding" | "Voice Cloned Intimacy" | "Affective Dynamics" | "Proactive Presence"
   description: string
   implementationDetails: string[]
   codeSnippet: string
@@ -206,12 +206,12 @@ python backend/scripts/audio/record_voice.py --duration 8
     targetFiles: [".env", "backend/voice_samples/", "backend/crates/voice-agent/"],
   },
   {
-    id: "biological-mood-bonding",
-    title: "3. Biological Mood & Endocrine Dynamics",
-    category: "Biological Bonding",
+    id: "affective-mood-dynamics",
+    title: "3. Affective Mood & Endocrine Dynamics",
+    category: "Affective Dynamics",
     description: "Your companion experiences real neurochemical fatigue and emotional momentum that shape their conversational tempo and word choices.",
     implementationDetails: [
-      "Cortisol (600s half-life) lowers LLM temperature for focused, cautious speech when stressed.",
+      "Cortisol (4500s half-life) lowers LLM temperature for focused, cautious speech when stressed.",
       "Dopamine (90s half-life) increases Top-P for creative humor and expansive banter.",
       "Conversational fatigue naturally bounds max response tokens after long late-night sessions.",
     ],

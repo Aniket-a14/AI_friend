@@ -84,12 +84,8 @@ class AgentState:
     active_goals: list[str] = field(default_factory=list)
     last_update: datetime = field(default_factory=datetime.now)
     last_user_interaction: float = field(default_factory=time.time)
-    # Phase 3.1: was a plain `StateService._last_proactive_attempt` instance
-    # attribute, persisted nowhere -- every restart reset the proactive
-    # cooldown to expired, and the two OS processes that each own a
-    # `StateService` (see `apply_external_state`'s docstring) never agreed on
-    # it. 0.0 (not "now") on purpose: a fresh agent has never attempted a
-    # proactive outreach, so the cooldown must read as already satisfied.
+    # Proactive outreach cooldown timestamp. Initialized to 0.0 so a fresh agent
+    # reads the cooldown as already satisfied.
     last_proactive_attempt: float = 0.0
     fatigue: float = 0.0  # Metabolic fatigue cycle F(t)
     user_mental_model: "UserMentalModel" = field(
@@ -119,39 +115,30 @@ class AgentState:
     dopamine_phasic_at: float = field(default_factory=time.time)
     cortisol_phasic_peak: float = 0.0
     cortisol_phasic_at: float = field(default_factory=time.time)
-    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline, unlike the
-    # two above, has no tonic counterpart -- see `adrenaline_tonic` -- so
-    # `adrenaline_phasic_peak` alone *is* the current adrenaline level at the
-    # moment of release, not a supplement to an ambient baseline.
+    # Adrenaline, unlike dopamine and cortisol, has no tonic counterpart --
+    # see `adrenaline_tonic` -- so `adrenaline_phasic_peak` alone is the current
+    # adrenaline level at the moment of release.
     adrenaline_phasic_peak: float = 0.0
     adrenaline_phasic_at: float = field(default_factory=time.time)
 
     # Half-lives are temperament, not deployment settings: how long a reward
     # glows and how long a fright lingers are among the most recognisable things
-    # about a person. StateService seeds these from the PersonaProfile; the
-    # defaults reproduce the current Config-driven behaviour exactly (cortisol's
-    # raised from 600.0 to 4500.0 in Bucket 11, voice remediation Phase 3 --
-    # see Config.CORTISOL_PHASIC_HALFLIFE_S).
+    # about a person. StateService seeds these from the PersonaProfile; defaults
+    # match constitutional baseline constants.
     dopamine_halflife_s: float = 90.0
     cortisol_halflife_s: float = 4500.0
     adrenaline_halflife_s: float = 120.0
 
-    # Phase 2A: brain_agent and subconscious_agent each own a `StateService`
-    # over the same logical agent (see `apply_external_state`'s docstring) --
-    # nothing before this let one tell a stale `state.broadcast` apart from a
-    # fresh one. `revision` increments once per `persist_state` call;
-    # `writer_id` names which process incremented it last. Not persisted
-    # across restarts (like the phasic bursts above): a process that just
-    # restarted has ended its own revision history, and a monotonically
-    # increasing counter would produce a spurious CAS rejection for the newer
-    # zero-based process it becomes.
+    # Cross-process state revision tracking: brain_agent and subconscious_agent
+    # each own a StateService over the same logical agent. `revision` increments
+    # once per `persist_state` call; `writer_id` names which process incremented it last.
+    # Not persisted across restarts: a restarted process begins a new revision history.
     revision: int = 0
     writer_id: str = ""
 
-    # Phase 04: relationship state is person-indexed. The scalar competence
-    # and benevolence fields above remain compatibility mirrors for the active
-    # person, while PersonModel retains the source relationship history. These
-    # fields remain last to preserve AgentState's legacy positional arguments.
+    # Person-indexed relationship state: scalar competence and benevolence fields
+    # remain compatibility mirrors for the active person, while PersonModel retains
+    # the source relationship history. These fields remain last to preserve positional args.
     persons: dict[str, PersonModel] = field(default_factory=dict)
     active_person_id: str = "default_user"
     capability_model: "CapabilityLimitationModel" = field(
@@ -483,10 +470,9 @@ class StateService:
         self.graph = graph_store
         self.db_path = db_path
         self.publish_cb = publish_cb
-        # Phase 2A: stamped onto `current_state.writer_id` on every
-        # `persist_state` call -- identifies which OS process (brain vs
-        # subconscious) last wrote this revision. Empty string is a valid,
-        # deliberate default for callers (tests, scripts) that don't care.
+        # Stamped onto `current_state.writer_id` on every `persist_state` call --
+        # identifies which OS process (brain vs subconscious) last wrote this revision.
+        # Empty string is a valid default for non-agent callers (tests, scripts).
         self.writer_id = writer_id
         # Temperament has to exist before the state it initialises.
         self.persona = persona or PersonaProfile.load()
@@ -938,11 +924,9 @@ class StateService:
         source of the same shape, not a new one.
         """
         async with self._state_lock:
-            # Phase 2A: compare-and-swap guard. A broadcast is "stale" when it
-            # carries a revision older than what this process already has --
-            # expected under normal operation (mesh delivery has no ordering
-            # guarantee across subjects), not an error, so this logs and
-            # returns rather than raising `StateConflictError`.
+            # Compare-and-swap guard. A broadcast is "stale" when it carries a revision
+            # older than what this process already holds -- expected under normal mesh
+            # delivery, not an error, so this logs and ignores without conflict error.
             incoming_revision = data.get("revision")
             if incoming_revision is not None:
                 incoming_revision = int(incoming_revision)
@@ -1060,9 +1044,8 @@ class StateService:
         ordering*, not the state fields.
         """
         async with self._persist_lock:
-            # Phase 2A: one increment per persist call, inside the same lock
-            # that already serializes write ordering -- the revision ordering
-            # matches the write ordering for free, no second lock needed.
+            # Increment revision counter per persist call inside the persist lock,
+            # ensuring revision ordering strictly matches disk/cache write ordering.
             self.current_state.revision += 1
             self.current_state.writer_id = self.writer_id
             # One snapshot, taken once, used by both stores. Previously the
@@ -1955,10 +1938,8 @@ class StateService:
     def get_context_snapshot(self) -> dict[str, Any]:
         return {
             "emotion": self.get_emotion_label(),
-            # Phase 2A: surfaced so `StateUpdate.from_snapshot` (contracts.py)
-            # can carry revision/writer_id on the `state.update` wire too --
-            # currently informational there (the CAS guard itself lives on
-            # `state.broadcast`'s raw dict, applied in `apply_external_state`).
+            # Surfaced so `StateUpdate.from_snapshot` (contracts.py) carries
+            # revision/writer_id on the `state.update` subject for cross-process tracing.
             "revision": self.current_state.revision,
             "writer_id": self.current_state.writer_id,
             "mood": self.current_state.mood,

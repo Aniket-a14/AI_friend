@@ -131,7 +131,7 @@ export function VoiceShowcase() {
 
           <div className="flex items-center justify-between text-[11px] text-black/40 pt-2 border-t border-black/[0.04]">
             <span>Engine: GPT-SoVITS (32,000 Hz)</span>
-            <span className="text-emerald-700/80 font-medium">Barge-in latency target: &lt; 150ms</span>
+            <span className="text-emerald-700/80 font-medium">Barge-in reflex: &lt; 1ms (0.099 ms validated)</span>
           </div>
         </div>
       </div>

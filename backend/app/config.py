@@ -186,11 +186,10 @@ class AppSettings(BaseSettings):
     AI_NAME: str = "AI Friend"
     OLLAMA_URL: str = "http://127.0.0.1:11434"
 
-    # Roadmap Phase 4.2: bring-your-own cloud API key for hardware that can't
-    # host a local model. "ollama" (the default) is every construction site's
-    # existing behaviour, unchanged. Sends conversation to a third party --
-    # the opposite of this project's default local-first posture -- so it is
-    # never the default and the user must set it explicitly.
+    # Bring-your-own cloud API key for hardware that cannot host a local model.
+    # "ollama" (the default) is local-first, on-device behavior. Setting this to
+    # a third party (e.g. anthropic) sends conversation data off-device, so it
+    # is never enabled by default and must be explicitly configured.
     LLM_PROVIDER: str = "ollama"
     ANTHROPIC_API_KEY: str | None = None
 
@@ -198,55 +197,31 @@ class AppSettings(BaseSettings):
     LLM_CHAT_MODEL: str | None = None
     LLM_REFLECTION_MODEL: str | None = None
 
-    # Bucket 6.1 (voice remediation Phase 3): OllamaClient hardcoded 2048
-    # regardless of what the model actually supports, and Ollama truncates a
-    # too-long prompt *from the front* -- exactly where the system prompt and
-    # persona identity live. Both locally-pulled models comfortably exceed
-    # this: llama3.2:3b advertises a 131072 context window, qwen2.5:3b a
-    # 32768 one. 8192 is chosen, not just raised arbitrarily, from the actual
-    # KV-cache cost at the deployment ceiling (RTX 2060S, 8GB, ~6.2GB free
-    # per the remediation plan's home-gpu audit): at fp16 KV,
-    # 2*layers*kv_heads*head_dim*2 bytes/token gives ~112KB/token for
-    # llama3.2:3b (GQA, 8 kv heads) and ~36KB/token for qwen2.5:3b (GQA, 2 kv
-    # heads) -- i.e. ~0.9GB and ~0.3GB respectively at this ceiling, leaving
-    # ample headroom next to a ~2GB Q4 weight footprint. This is a computed
-    # budget, not a live measurement; the eval harness (`evals/`) already
-    # pins 8192 independently for the same reason. Configurable because the
-    # right number depends on the deployment's actual free VRAM, which this
-    # file cannot know.
+    # LLM context window configuration. 8192 is sized to ensure system prompt and
+    # persona identity fit comfortably within KV-cache constraints on home-GPU class
+    # hardware (e.g. RTX 2060 Super 8GB) without front-truncation of system instructions.
     LLM_NUM_CTX: int = 8192
 
     LLM_STREAM_MAX_SECONDS: int = 120
     LLM_INTENT_CLASSIFICATION_ENABLED: bool = True
     INTENT_CLASSIFIER_BACKEND: Literal["llm", "heuristic"] = "llm"
-    # Phase 1 experiment: ask the realization model for a bounded envelope.
-    # False preserves the existing streaming text contract.
+    # Experimental typed realization: request a bounded structured envelope from the model.
+    # False preserves the default streaming text contract.
     LLM_TYPED_REALIZATION_ENABLED: bool = False
-    # Phase 02 Package B: gates ActionCandidate generation / CandidateSelector
-    # wiring in decision.py and pipeline.py. Flipped True in Phase 07 --
-    # Package A's temporal memory store (backend/app/state/temporal_store.py)
-    # is wired in and candidate-driven action selection has been verified
-    # end to end. Callers that must reproduce exact pre-Phase-02 behavior
-    # (backward-compatibility tests) now monkeypatch this back to False
-    # explicitly rather than relying on the default.
-    PHASE_02_MEMORY_TRUTH: bool = True
 
-    # Phase 03 Package B: gates global-control scoring modulation and
-    # emotion-regulation candidate generation (REAPPRAISE,
-    # REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py. Flipped
-    # True in Phase 07 -- Package A's global_controls.py and appraisal.py
-    # are wired in and end-to-end regulation selection has been verified.
-    # Callers that must reproduce exact pre-Phase-03 behavior now
-    # monkeypatch this back to False explicitly rather than relying on the
-    # default.
-    PHASE_03_AFFECT_CONTROL: bool = True
+    # Gates ActionCandidate generation and CandidateSelector wiring in decision.py and pipeline.py,
+    # driving action selection from temporal memory activations.
+    MEMORY_TRUTH_ENABLED: bool = True
+    PHASE_02_MEMORY_TRUTH: bool = True  # Backward-compatibility alias
 
-    # Phase 07: production turns supply an authoritative workspace instance
+    # Gates global-control scoring modulation and emotion-regulation candidate generation
+    # (REAPPRAISE, REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py.
+    AFFECT_CONTROL_ENABLED: bool = True
+    PHASE_03_AFFECT_CONTROL: bool = True  # Backward-compatibility alias
+
+    # Authoritative workspace instance: production turns supply an authoritative workspace instance
     # to ActionIntent rather than falling back to (0, 0) -- see
-    # state/session_state.py's `workspace_authoritative_enabled()`. Declared
-    # here as a real field (it previously only existed as a `getattr`
-    # default inside that function) so the production default is
-    # discoverable from Config itself rather than only from the call site.
+    # state/session_state.py's `workspace_authoritative_enabled()`.
     WORKSPACE_AUTHORITATIVE: bool = True
 
     # P1-1: the control tier's JetStream consumer settings (system.tick).
@@ -266,69 +241,34 @@ class AppSettings(BaseSettings):
     # a bug to surface, not a message to retry forever.
     MESH_CONTROL_MAX_DELIVER: int = 3
 
-    # Bucket 17 (voice remediation Phase 4): the reflex tier's consumer
-    # budget. `vision.facial_reflex` and `audio.stop` handlers both return
-    # fast and synchronously by design -- a short ack_wait is therefore an
-    # honest latency budget, not just a label, and a handler that actually
-    # stalls should be redelivered quickly rather than left holding a
-    # 30s+ control-tier or unbounded default ack_wait.
+    # Reflex tier consumer budget. `vision.facial_reflex` and `audio.stop` handlers both return
+    # fast and synchronously by design -- a short ack_wait is therefore an honest latency budget,
+    # ensuring stalled handlers are redelivered quickly.
     MESH_REFLEX_ACK_WAIT_S: float = 5.0
     MESH_REFLEX_MAX_DELIVER: int = 2
     MOCK_LLM_TEXT: bool = False
 
-    # Stage 3 (audit/ROADMAP.md §7): off by default. When true, transport_agent,
-    # subconscious_agent, and ollama_client emit the timestamps and prompt
-    # digests backend/tools/measure/ needs for measurements 1.1, 1.2 and 1.5.
-    # A prompt digest is recorded unconditionally when this is on; the full
-    # prompt text is not, so turning this on in a real deployment does not by
-    # itself start logging conversation content.
+    # Measurement trace flag. When true, transport_agent, subconscious_agent, and ollama_client
+    # emit timestamps and prompt digests for forensic latency and prefix-sharing analysis.
+    # A prompt digest is recorded unconditionally when this is on; full prompt text is not.
     MEASURE_TRACE: bool = False
-    # Separate from MEASURE_TRACE on purpose: the digest above is safe to log
-    # unconditionally, but measurement 1.5 (prompt-prefix sharing) needs the
-    # literal prompt text to compute a shared prefix across a turn's six LLM
-    # calls -- a hash can't do that. This second flag is what actually opts a
-    # run into logging conversation content, and stays off even when
-    # MEASURE_TRACE is on.
+    # Literal prompt text capture for shared prefix analysis across cognitive turns.
+    # Separate from MEASURE_TRACE to prevent accidental conversation logging.
     MEASURE_TRACE_FULL_PROMPTS: bool = False
 
     REFLECTION_ENABLED: bool = True
     SYSTEM2_APPRAISAL_ENABLED: bool = True
-    # Bucket 12 (voice remediation Phase 3): this gated `ReflectionService.
-    # trigger_reflection` at zero, i.e. not at all -- the only thing
-    # stopping back-to-back reflection passes during a fast-paced
-    # conversation was `is_reflecting` (a busy-flag, not a cooldown), so a
-    # new multi-LLM-call reflection pass could start on the very next turn
-    # the instant the previous one finished. This is the event-triggered
-    # path from `cognitive/core.py` ("reflection_needed" after every turn,
-    # and after every proactive message) -- distinct from
-    # `subconscious_agent.py`'s separate idle-consolidation sweep, which
-    # already has its own 300s user-silence gate upstream in
-    # `_on_system_tick` and is unaffected by this constant. 30s is long
-    # enough that rapid-fire turns don't each spawn their own reflection
-    # pass, short enough that a real conversation still gets reflected on
-    # several times a minute when warranted. Tests pin this back to 0 via
-    # `conftest.py`'s `enforce_test_config` for determinism -- see that
-    # fixture's own comment.
+    # Minimum interval between reflection passes to prevent back-to-back LLM passes during
+    # fast-paced conversation while still permitting multiple reflections per minute when warranted.
     REFLECTION_MIN_INTERVAL_SECONDS: float = 30.0
 
-    # Bucket 12 (voice remediation Phase 3), items 2-3: a third, independent
-    # gate from the two above -- REFLECTION_MIN_INTERVAL_SECONDS throttles
-    # per-turn reflection, the 300s constant upstream of `_run_consolidation_
-    # pass` gates that pass on silence alone (any time of day), and this
-    # gates a *separate* sweep (`SubconsciousAgent._run_rest_phase_replay`)
-    # that only runs when `is_rest_phase` says the agent is both idle AND
-    # (night OR fatigue > 0.8) -- reusing the existing dream gate's fatigue
-    # threshold rather than inventing a second one. 1800s (30 minutes) keeps
-    # a long rest period from re-scoring the same candidates every 5s tick
-    # without meaningfully delaying a real overnight consolidation window.
+    # Rest-phase replay interval: periodic consolidation sweep that runs when the agent is idle
+    # and in rest phase (night OR fatigue > 0.8). 1800s (30 minutes) avoids redundant rescoring.
     REST_PHASE_REPLAY_INTERVAL_SECONDS: float = 1800.0
 
-    # Phase 5C (Section 14 MODIFY): flipped True in Phase 07 -- persona-trait
-    # suggestions from reflection now require governed review
-    # (LearningGovernor, cognitive/learning_governance.py) rather than
-    # auto-applying directly via IdentityManager.evolve_persona. Tests that
-    # exercise the legacy auto-apply path monkeypatch this back to False
-    # explicitly.
+    # Learning review governance: controls whether persona-trait suggestions from reflection
+    # require governed review (LearningGovernor, cognitive/learning_governance.py) rather than
+    # auto-applying directly via IdentityManager.evolve_persona.
     LEARNING_REVIEW_REQUIRED: bool = True
     # How many recent high-importance memories one rest-phase sweep samples
     # for re-scoring/pruning via the existing `apply_actr_decay` pipeline.
@@ -340,12 +280,8 @@ class AppSettings(BaseSettings):
     PROACTIVE_IDLE_THRESHOLD_SECONDS: float = 7200.0
     PROACTIVE_COOLDOWN_SECONDS: float = 3600.0
     PROACTIVE_MIN_ENERGY: float = 0.2
-    # Roadmap leftovers Item 4b (M3-D2): 0.5 matches turn_taking_probability's
-    # own formula midpoint (0.5 + 0.3*D - 0.1*F + 0.2*V at D=0,F=0,V=0), and
-    # a state-space sweep (tools/measure/m4b_turn_taking_gate.py) confirmed
-    # it blocks 16.9% of the reachable (V,D,F) grid -- inside the [15%,50%]
-    # band that makes this a real discriminator rather than decoration, so
-    # the default did not need re-siting to the sweep's measured median.
+    # Proactive turn-taking probability threshold: 0.5 matches the midpoint of the
+    # turn_taking_probability formula (0.5 + 0.3*D - 0.1*F + 0.2*V).
     PROACTIVE_MIN_TURN_PROBABILITY: float = 0.5
     PROACTIVE_DEBUG_THRESHOLD_OVERRIDE: str | None = None
 
@@ -423,75 +359,39 @@ class AppSettings(BaseSettings):
     # probe the real path rather than mere process liveness (see finding E1).
     VISION_HEALTH_FILE: str = "/tmp/vision_agent_healthy"  # nosec B108 - same as SQLITE_FALLBACK_HEALTH_FILE above
 
-    # Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
-    # channel (app/vision/reflex.py). Deliberately independent of
-    # VLM_ENABLED/VISION_SUSPEND_DURING_TURN -- it costs zero VRAM and is the
-    # whole point of sampling continuously, including mid-turn, so it must
-    # not inherit the VLM's contention-driven suspend policy.
+    # CPU-only facial reflex channel (app/vision/reflex.py). Deliberately independent of
+    # VLM_ENABLED/VISION_SUSPEND_DURING_TURN -- costs zero VRAM and samples continuously
+    # across cognitive turns.
     FACIAL_REFLEX_ENABLED: bool = True
     # Empty means "resolve relative to app/vision/agent.py's own location" --
-    # see VisionAgent.__init__ -- not the process cwd, per this project's own
-    # hard-learned lesson (the persona path-resolution bug) about relative
-    # paths resolving differently across deployment entry points.
+    # see VisionAgent.__init__ -- not the process cwd, avoiding relative path resolution bugs.
     FACIAL_REFLEX_MODEL_PATH: str = ""
 
-    # P1-7: measured (this repo's audit/) that two resident 3B models roughly
-    # halve each other's decode rate on one GPU/one Ollama endpoint -- the
-    # VLM and the conversational LLM otherwise contend on every turn. Since
-    # OLLAMA_MAX_LOADED_MODELS=1 was measured to trade that for a ~2s
-    # model-swap on every contention event (worse for VLM_APPRAISAL_INTERVAL-
-    # frequency calls than the throughput hit it removes), the fix is
-    # scheduling, not eviction: suspend VLM appraisal for the duration of a
-    # cognitive turn instead.
+    # Suspends VLM appraisal during cognitive turns to prevent GPU contention with the
+    # conversational LLM, eliminating decode throughput degradation on single-GPU deployments.
     VISION_SUSPEND_DURING_TURN: bool = True
-    # M3-R3: the VLM caller had no circuit breaker, so a failing Ollama (or
-    # missing VLM model) was retried every capture tick with a full base64
-    # frame. Modeled on the Rust CircuitBreaker in
-    # crates/voice-agent/src/main.rs -- consecutive-failure threshold, then a
-    # cooldown before the next real attempt.
+    # Circuit breaker for VLM inference: consecutive-failure threshold followed by cooldown,
+    # preventing repetitive stalls on failed frames or unready VLM services.
     VLM_BREAKER_FAILURE_THRESHOLD: int = 3
     VLM_BREAKER_COOLDOWN_S: float = 30.0
 
-    # M3-A10: `_calculate_user_distance`'s pinhole-camera formula needs a
-    # focal length in pixels, not just a face-width ratio -- the previous
-    # `ASSUMED_FACE_WIDTH_M / (face_width_px / image_width_px)` implicitly
-    # set focal_px == image_width, an unstated assumption equivalent to a
-    # fixed ~53 degree horizontal FOV regardless of the real camera. These
-    # two are calibrated together: VISION_FOCAL_PX is the focal length at
-    # VISION_FOCAL_REFERENCE_WIDTH_PX, the width both CameraLink and
-    # ScreenLink resize captures down to (`_compress_frame`, links.py) before
-    # anything downstream sees them. The default assumes a ~60 degree
-    # horizontal FOV, a typical laptop webcam spec, and is a placeholder
-    # order-of-magnitude choice, not a measured value (see CLAUDE.md's
-    # integrity constraints). Calibration note: place a face of known width
-    # (e.g. 0.15m) at a known distance (e.g. 0.5m) in frame, read the logged
-    # face_width_px, and solve
-    # VISION_FOCAL_PX = (face_width_px * distance_m) / FACE_WIDTH_M,
-    # scaled to VISION_FOCAL_REFERENCE_WIDTH_PX if measured at another width.
+    # Pinhole-camera focal length calibration in pixels. VISION_FOCAL_PX is calibrated for
+    # VISION_FOCAL_REFERENCE_WIDTH_PX (the normalized width from CameraLink and ScreenLink).
+    # Default assumes ~60 degree horizontal FOV typical of laptop webcams.
     VISION_FOCAL_PX: float = 443.0
     VISION_FOCAL_REFERENCE_WIDTH_PX: int = 512
 
-    # Roadmap leftovers Item 1 (P4-12, M5-P3 MEASURED): nomic-embed-text,
-    # 768-dim, per-item embedding cost at batch 1 (warm) ~19ms, batch 8
-    # 9.2ms, batch 32 8.0ms -- 32 is the measured knee, not a guess.
-    # `MemoryStore.get_embeddings` chunks at this size.
+    # Vector embedding batch size: nomic-embed-text achieves optimal batch throughput
+    # at batch size 32 on local inference.
     EMBEDDING_BATCH_SIZE: int = 32
 
-    # P3-1: salience-gated visual episodic memory. Screen captures are far
-    # more privacy-sensitive than camera captures -- a screen can show
-    # anything open on the machine, not just the user's face -- so
-    # screen-sourced visual traces get a hard TTL instead of the graded
-    # ACT-R fade camera-sourced ones get through `memories`. This is a
-    # privacy boundary, not temperament, so it is a deployment setting here
-    # rather than a PersonaProfile field.
+    # Salience-gated visual episodic memory. Screen captures are privacy-sensitive and
+    # receive a hard TTL instead of graded ACT-R decay.
     VISUAL_SCREEN_TRACE_TTL_H: float = 24.0
     # A visual trace is stored only when the frame is perceptually novel
     # (VisualAppraisalService.last_frame_was_novel), the appraisal produced
     # a description, and the moment was affectively significant -- current
-    # arousal or |valence| clears one of these two thresholds. Unmeasured
-    # placeholders (CLAUDE.md integrity constraints): both are a modest
-    # deviation from the neutral baseline (arousal=0.5, valence=0.0), not
-    # tuned values.
+    # arousal or |valence| clears one of these two thresholds.
     VISUAL_MEMORY_AROUSAL_THRESHOLD: float = 0.55
     VISUAL_MEMORY_VALENCE_THRESHOLD: float = 0.15
 
@@ -505,21 +405,13 @@ class AppSettings(BaseSettings):
     # not these. Cortisol's is the longer of the two deliberately: an acute
     # stress response outlasts a reward burst.
     #
-    # Bucket 11 (voice remediation Phase 3): cortisol's decay-once-released
-    # rate is a separate question from that onset-speed compression above,
-    # and 600s (10 minutes) was 6-9x faster than measured human cortisol
-    # plasma half-life (~66-90 minutes) -- a fright stopped colouring
-    # behaviour within about 20 minutes. Raised to 4500s (75 minutes, the
-    # midpoint of that range); the 7200s persona-profile ceiling already
-    # permitted this, only the default moved.
+    # Cortisol phasic half-life: 4500s (~75 minutes) aligns with measured human
+    # cortisol plasma half-life (~66-90 minutes).
     DOPAMINE_PHASIC_HALFLIFE_S: float = 90.0
     CORTISOL_PHASIC_HALFLIFE_S: float = 4500.0
-    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline sits between
-    # dopamine's 90s and cortisol's 4500s on purpose -- it governs the most
-    # conversationally visible responses (startle, being interrupted, shock),
-    # which fade over minutes, not the ~90s of a reward glow or the ~75min
-    # hangover of an acute stress response. 120s is the low end of the plan's
-    # own "1-3 min timescale" for this channel.
+    # Adrenaline sits between dopamine's 90s and cortisol's 4500s, governing the most
+    # conversationally visible reactive responses (startle, interruption, shock) which fade
+    # over minutes.
     ADRENALINE_PHASIC_HALFLIFE_S: float = 120.0
 
     STT_MODEL_SIZE: str = "base"
@@ -534,26 +426,11 @@ class AppSettings(BaseSettings):
     TRANSPORT_AUDIO_QUEUE_SIZE: int = 256
     VOICE_FILLER_MIN_INTERVAL_SECONDS: float = 1.5
     VOICE_FILLER_MAX_PLAYBACK_BACKLOG: int = 4
-    # Bucket 3 (VOICE_REMEDIATION_PLAN.md): was 0.25 (250ms), contradicting the
-    # 400ms this value was described as everywhere else (this module's own
-    # docstring text, the log line, README.md, docs/ARCHITECTURE.md). A live
-    # capture (2026-09-01, phase0_baseline) also showed the *measurement* was
-    # contaminated by conversational pacing sleep (300-900ms) counted against
-    # this same budget before generation even started -- see the
-    # `generation_start_time` fix in brain_agent.py/conversational_runtime.py.
-    # ~264ms of MAUT/memory/endocrine work landed before Ollama's own TTFT --
-    # so 400ms is the *baseline* generation overhead, not a noticeable delay.
-    # Firing a filler at baseline makes it fire on essentially every turn,
-    # which is the opposite of "speculative." Raised to 1200ms (2026-09-01,
-    # user direction) so the filler only fires once TTFT is running well
-    # above normal -- an actually-perceptible pause -- rather than papering
-    # over routine overhead the user was never going to notice.
+    # Voice filler latency threshold: 1.2s ensures speculative fillers only fire when
+    # time-to-first-token experiences a perceptible delay above baseline generation overhead.
     VOICE_FILLER_THRESHOLD: float = 1.2
-    # Bucket 1 (VOICE_REMEDIATION_PLAN.md): a genuine human reaction cannot
-    # produce a final chat.input this soon after the agent's audio starts
-    # playing (STT alone needs 250ms min_speech_ms + 700ms endpoint silence
-    # before it even emits a transcript) -- see brain_agent.py's
-    # _on_chat_input for the barge-in grace period this gates.
+    # Barge-in onset grace period: 0.15s protects against false barge-in triggers
+    # immediately after speech audio starts playing.
     BARGE_IN_ONSET_GRACE_S: float = 0.15
 
     INTENT_THRESHOLD: float = 0.75
@@ -679,6 +556,16 @@ class AppSettings(BaseSettings):
             self.LLM_CHAT_MODEL = self.LLM_FAST_MODEL
         if not self.LLM_REFLECTION_MODEL:
             self.LLM_REFLECTION_MODEL = self.LLM_CHAT_MODEL
+        # Synchronize canonical and backward-compatibility aliases
+        if "MEMORY_TRUTH_ENABLED" in self.model_fields_set and "PHASE_02_MEMORY_TRUTH" not in self.model_fields_set:
+            self.PHASE_02_MEMORY_TRUTH = self.MEMORY_TRUTH_ENABLED
+        elif "PHASE_02_MEMORY_TRUTH" in self.model_fields_set and "MEMORY_TRUTH_ENABLED" not in self.model_fields_set:
+            self.MEMORY_TRUTH_ENABLED = self.PHASE_02_MEMORY_TRUTH
+
+        if "AFFECT_CONTROL_ENABLED" in self.model_fields_set and "PHASE_03_AFFECT_CONTROL" not in self.model_fields_set:
+            self.PHASE_03_AFFECT_CONTROL = self.AFFECT_CONTROL_ENABLED
+        elif "PHASE_03_AFFECT_CONTROL" in self.model_fields_set and "AFFECT_CONTROL_ENABLED" not in self.model_fields_set:
+            self.AFFECT_CONTROL_ENABLED = self.PHASE_03_AFFECT_CONTROL
         return self
 
     @field_validator("DEBUG", mode="before")
@@ -837,6 +724,14 @@ config_instance = AppSettings()
 
 class ConfigMeta(type):
     def __getattr__(cls, name):
+        if name == "MEMORY_TRUTH_ENABLED" and "PHASE_02_MEMORY_TRUTH" in cls.__dict__:
+            return cls.__dict__["PHASE_02_MEMORY_TRUTH"]
+        if name == "PHASE_02_MEMORY_TRUTH" and "MEMORY_TRUTH_ENABLED" in cls.__dict__:
+            return cls.__dict__["MEMORY_TRUTH_ENABLED"]
+        if name == "AFFECT_CONTROL_ENABLED" and "PHASE_03_AFFECT_CONTROL" in cls.__dict__:
+            return cls.__dict__["PHASE_03_AFFECT_CONTROL"]
+        if name == "PHASE_03_AFFECT_CONTROL" and "AFFECT_CONTROL_ENABLED" in cls.__dict__:
+            return cls.__dict__["AFFECT_CONTROL_ENABLED"]
         return getattr(config_instance, name)
 
 
