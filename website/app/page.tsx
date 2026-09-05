@@ -146,16 +146,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SECTION 1: INTERACTIVE COMPILER STUDIO (GLOSSY BLUR OVERLAY) ─────── */}
+      {/* ── SECTION 1: INTERACTIVE COMPILER STUDIO ─────────────────────────── */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
             <PixelIcon type="platform" size={36} />
             <div className="mt-4 flex items-center gap-2">
               <Tag>FREEFORM PERSONA COMPILER</Tag>
-              <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold">
-                COMING SOON
-              </span>
             </div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
               Describe them in prose.<br />Never pick from a preset list.
@@ -165,14 +162,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <ComingSoonOverlay
-            title="COMING SOON"
-            description="In-browser interactive persona compiler and live dry-run tester is in active development for the web sandbox preview. Full UI preview visible below."
-            eta="Roadmap Preview"
-            blurAmount="md"
-          >
-            <PersonaCompilerDemo />
-          </ComingSoonOverlay>
+          <PersonaCompilerDemo />
         </div>
       </section>
 

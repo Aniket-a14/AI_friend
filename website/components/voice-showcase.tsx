@@ -37,33 +37,29 @@ const VOICE_VARIANTS = [
   },
 ]
 
+// No audio plays here yet -- see /roadmap. What's shown is accurate: the
+// real reference-clip selection and pause-scale parameters the voice agent
+// actually uses per affect register, just without a rendered clip attached.
 export function VoiceShowcase() {
   const [activeVariantId, setActiveVariantId] = useState(VOICE_VARIANTS[0].id)
-  const [isPlaying, setIsPlaying] = useState(false)
-
   const activeVariant = VOICE_VARIANTS.find((v) => v.id === activeVariantId) || VOICE_VARIANTS[0]
-
-  const handleTogglePlay = () => {
-    setIsPlaying(true)
-    setTimeout(() => setIsPlaying(false), 2500)
-  }
 
   return (
     <div className="rounded-2xl border border-black/[0.08] bg-white p-6 md:p-8 shadow-sm">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-black/[0.06]">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-widest text-black/40 bg-black/[0.04] px-2.5 py-1 rounded-full">
-            Acoustic Physical Modeling
+            Reference Parameters — No Audio Yet
           </span>
           <h3 className="text-2xl font-light tracking-tight mt-2 text-[#111]">
             Emotional Voice Cloning & Prosody
           </h3>
           <p className="text-xs text-black/45 mt-1">
-            Real 32kHz neural voice rendering dynamically shaped by affective state and pause bias.
+            The real per-affect reference-clip and pause-scale mapping the voice agent uses. No rendered
+            audio is wired up on the website yet — see <a href="/roadmap" className="underline">the roadmap</a>.
           </p>
         </div>
 
-        {/* Emotion Switcher */}
         <div className="flex flex-wrap gap-2">
           {VOICE_VARIANTS.map((v) => (
             <button
@@ -82,37 +78,13 @@ export function VoiceShowcase() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-        {/* Visual Waveform & Player on Left */}
         <div className="lg:col-span-6 rounded-xl border border-black/[0.08] bg-[#fafaf8] p-6 flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-white border border-black/[0.08] flex items-center justify-center shadow-xs">
-            <button
-              onClick={handleTogglePlay}
-              className="w-12 h-12 rounded-full bg-[#111] text-white flex items-center justify-center hover:bg-[#333] transition-colors"
-            >
-              {isPlaying ? "■" : "▶"}
-            </button>
-          </div>
-
-          {/* Animated Waveform Visualization */}
-          <div className="flex items-center gap-1 h-12 px-4 py-2 w-full justify-center">
-            {[24, 48, 16, 64, 32, 80, 40, 96, 50, 72, 36, 60, 20, 84, 44, 28, 56, 38, 70, 30].map((h, i) => (
-              <span
-                key={i}
-                className="w-1 bg-[#111] rounded-full transition-all duration-300"
-                style={{
-                  height: isPlaying ? `${Math.max(8, (h * (i % 3 + 1)) % 48)}px` : "6px",
-                  opacity: isPlaying ? 0.85 : 0.2,
-                }}
-              />
-            ))}
-          </div>
-
-          <div className="text-xs text-black/60 font-sans italic max-w-sm">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-black/35">Sample line for this register</span>
+          <div className="text-sm text-black/70 font-sans italic max-w-sm">
             "{activeVariant.sampleText}"
           </div>
         </div>
 
-        {/* Technical Specification on Right */}
         <div className="lg:col-span-6 space-y-3 font-sans text-xs">
           <div className="p-3.5 bg-white rounded-lg border border-black/[0.06]">
             <span className="font-mono text-[10px] uppercase text-black/35 block mb-0.5">Affect Parameter Space</span>

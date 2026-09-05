@@ -17,6 +17,25 @@ export interface PersonaPreset {
     cortisolSensitivity: number
     dopamineSensitivity: number
   }
+  /**
+   * The 9 scored dimensions (backend/app/persona/compiler.py's
+   * _infer_temperament input) that would produce a temperament close to the
+   * one above, if run through the real formula. In the actual product these
+   * come from an LLM reading `proseDescription`; here they're authored
+   * directly so the Playground's Persona Compiler demo can load a preset and
+   * show the real deterministic math live. See website/lib/persona-compiler-math.ts.
+   */
+  dimensions: {
+    warmth: number
+    energy: number
+    assertiveness: number
+    volatility: number
+    resilience: number
+    opinionFirmness: number
+    opennessToTrust: number
+    warmthGrowth: number
+    emotionalLingering: number
+  }
   memoryLexiconSeeds: string[]
   sampleDialogue: {
     user: string
@@ -61,6 +80,17 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
       cortisolSensitivity: 0.35,
       dopamineSensitivity: 0.80,
     },
+    dimensions: {
+      warmth: 0.7,
+      energy: 0.57,
+      assertiveness: 0.64,
+      volatility: 0.35,
+      resilience: 0.9,
+      opinionFirmness: 0.85,
+      opennessToTrust: 0.85,
+      warmthGrowth: 0.7,
+      emotionalLingering: 0.5,
+    },
     memoryLexiconSeeds: ["inside-jokes", "late-night-pizza", "broken-first-laptop", "nostalgia-anchors", "unfiltered-honesty"],
     sampleDialogue: {
       user: "I think I'm just going to cancel my trip and stay in all weekend working.",
@@ -92,6 +122,17 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
       dominanceBaseline: 0.45,
       cortisolSensitivity: 0.20,
       dopamineSensitivity: 0.55,
+    },
+    dimensions: {
+      warmth: 0.5,
+      energy: 0.14,
+      assertiveness: 0.43,
+      volatility: 0.15,
+      resilience: 0.75,
+      opinionFirmness: 0.6,
+      opennessToTrust: 0.85,
+      warmthGrowth: 0.5,
+      emotionalLingering: 0.7,
     },
     memoryLexiconSeeds: ["quiet-hours", "existential-reflections", "sleep-hygiene", "journaling", "ambient-presence"],
     sampleDialogue: {
@@ -125,6 +166,17 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
       cortisolSensitivity: 0.45,
       dopamineSensitivity: 0.90,
     },
+    dimensions: {
+      warmth: 0.6,
+      energy: 0.79,
+      assertiveness: 0.71,
+      volatility: 0.7,
+      resilience: 0.55,
+      opinionFirmness: 0.8,
+      opennessToTrust: 0.8,
+      warmthGrowth: 0.75,
+      emotionalLingering: 0.4,
+    },
     memoryLexiconSeeds: ["prototypes", "creative-flow", "aesthetic-critique", "midnight-experiments", "craftsmanship"],
     sampleDialogue: {
       user: "What if I just cut corners on this architecture and ship the hacky version tomorrow?",
@@ -156,6 +208,17 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
       dominanceBaseline: 0.70,
       cortisolSensitivity: 0.25,
       dopamineSensitivity: 0.65,
+    },
+    dimensions: {
+      warmth: 0.55,
+      energy: 0.36,
+      assertiveness: 0.79,
+      volatility: 0.1,
+      resilience: 0.95,
+      opinionFirmness: 0.75,
+      opennessToTrust: 0.85,
+      warmthGrowth: 0.55,
+      emotionalLingering: 0.35,
     },
     memoryLexiconSeeds: ["family-anchors", "practical-wisdom", "resilience", "daily-walks", "groundedness"],
     sampleDialogue: {
