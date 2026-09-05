@@ -1,8 +1,7 @@
-# Humanoid Brain Architecture: Reproducible Demonstration Scenarios
+# Brain Architecture: Reproducible Demonstration Scenarios
 
 ## Document Status
-- **Classification:** Engineering Evidence & Partnership Demonstrations
-- **Audience:** External Technical Partners, Robotics Integrators, Research Labs
+- **Classification:** Engineering evidence, reproducible by any contributor
 - **Character Encoding:** Strict 7-bit ASCII
 - **Authoritative System Commit:** Merged on `main` (`156f3b7`)
 
@@ -327,6 +326,6 @@ Or execute the local pytest suite:
 
 ---
 
-## 8. Summary for Technical Partners
+## 8. Summary
 
-These demonstrations verify that the system is not a thin API wrapper around an LLM. The cognitive kernel, memory arbitration, affective state, and boundary enforcement reside in the **Brain Architecture**, enabling seamless integration with any external TTS engine, vision pipeline, or foundation model.
+These demonstrations verify that the system is not a thin API wrapper around an LLM. The cognitive kernel, memory arbitration, affective state, and boundary enforcement reside in the **Brain Architecture**, enabling integration with any external TTS engine, vision pipeline, or foundation model.

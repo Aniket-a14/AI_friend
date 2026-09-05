@@ -1,13 +1,15 @@
-# Final Humanoid Brain Architecture
+# AI Friend: Brain Architecture
 
-**Status:** Accepted target architecture  
-**Date:** 2026-09-03  
-**Scope:** Brain-first cognitive architecture; voice and vision are integral boundaries; body control is external.  
-**Evidence baseline:** repository `bb5be86ba7c14ab7f8afa056707597a37d3bdd86` plus the three synthesis reports named in Section 2.
+**Status:** Living architecture reference — the mechanism register in §2 records
+what's implemented, in progress, or explicitly deferred/rejected. This describes
+a target and its rationale; where it and the code disagree, `.agents/CONTEXT.md`
+(the engineering ledger) is right.
+**Scope:** Brain-first cognitive architecture; voice and vision are supporting
+boundaries; body control is external.
 
 ## 1. Executive Architecture Thesis
 
-AI_friend should become a **provider-independent persistent cognitive control kernel for a long-lived social agent**. The kernel owns identity constraints, current mental state, memory meaning, appraisal, goals, attention, action commitment, outcome history, and governed adaptation. Foundation models propose interpretations, candidates, plans, summaries, and language; they do not own durable truth or the final action. Voice turns a brain-owned `SpeechIntent` into sound. Vision turns pixels into uncertain observations. Databases, queues, models, and vendors are adapters, not cognition.
+AI Friend is a **provider-independent persistent cognitive control kernel for a long-lived social agent**. The kernel owns identity constraints, current mental state, memory meaning, appraisal, goals, attention, action commitment, outcome history, and governed adaptation. Foundation models propose interpretations, candidates, plans, summaries, and language; they do not own durable truth or the final action. Voice turns a brain-owned `SpeechIntent` into sound. Vision turns pixels into uncertain observations. Databases, queues, models, and vendors are adapters, not cognition.
 
 The smallest coherent kernel has six logical subsystems:
 
@@ -20,27 +22,7 @@ The smallest coherent kernel has six logical subsystems:
 
 This is not a biological brain, consciousness model, autonomous general learner, or claim that models are interchangeable. A foundation model materially affects fluency, reasoning, warmth, and style. Provider independence means that the agent's authoritative state and policies survive a swap, while a behavioral conformance gate decides whether a proposed model expresses them well enough.
 
-## 2. Evidence Used
-
-Evidence was weighted in this order: current code and runtime evidence; strong scientific evidence; reproducible engineering evidence; evidenced red-team findings; architectural proposals; speculation.
-
-- `BRAIN_ARCHITECTURE_REPORT.md` supplied the implementation baseline: real causal affect pathways, memory retrieval, identity policy, interruption repair, provider seams, state conflicts, inert scaffolds, and full-loop evidence gaps.
-- `HUMANOID_BRAIN_RESEARCH_REPORT.md` supplied research-grounded mechanisms: typed working state, appraisal, temporal belief validity, prediction-error event boundaries, multi-rate control, outcome-grounded self-knowledge, bounded background work, and provider-native intent/percept contracts.
-- `BRAIN_ARCHITECTURE_REDTEAM_REPORT.md` correctly challenged biological naming, speech-only action selection, prompt-centric memory, dream contamination, model-dependent identity expression, unmeasured complexity, and premature 3D/planning machinery.
-- Direct repository inspection confirmed the dropped `intent` in `cognitive/expression.py`, independent `StateService` instances, an ephemeral learning-review queue, persisted dream output, a real but optional camera facial-reflex publisher, and no production caller of `load_session_state`.
-- Primary research checks retained the limited conclusions that facial movement is not a reliable context-free emotion label ([Barrett et al., 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6640856/)); EM-LLM uses Bayesian surprise for episodic boundaries ([Fountas et al., 2024](https://arxiv.org/abs/2407.09450)); temporal knowledge graphs preserve changing facts ([Rasmussen et al., 2025](https://arxiv.org/abs/2501.13956)); model planning remains unreliable without verification ([Valmeekam et al., 2024](https://arxiv.org/abs/2409.13373)); conversational identity drift is model-dependent ([Choi et al., 2024](https://arxiv.org/abs/2412.00804)); and vendor expression surfaces change even within one provider ([ElevenLabs v3](https://elevenlabs.io/blog/v3-audiotags)).
-
-Claims not accepted as facts include the red-team's unmeasured 150–350 ms NATS penalty, its assertion that SQL replaces 95% of graph value, the research report's implication that external state can fully determine positive style, and any fixed commercial or novelty claim without comparative evidence.
-
-## 3. Decisions From the Three Reports
-
-The implementation report was right that meaningful mechanisms already exist, but too conservative about topology and too generous about disconnected background cognition. The research report was right about state ownership, appraisal, memory semantics, and provider boundaries, but proposed more control signals and spatial/planning machinery than the present product needs. The red-team was right about causal weakness and complexity, but treated unmeasured infrastructure opinions as measured conclusions and understated the live visual reflex path.
-
-The reconciliation is neither the current mesh with more boxes nor a rewrite into a minimal chatbot. It is a **logical modular monolith for the cognitive kernel**, with one authoritative reducer and explicit domain contracts. Current NATS services may remain during migration and at peripheral/process boundaries; database engines remain replaceable until benchmarks justify consolidation. Cognitive semantics must not depend on either.
-
-Four control signals, not six hormones, survive: `urgency_gain`, `exploration_budget`, `effort_budget`, and `learning_gain`. Four memory mechanisms, not seven stores, survive: working, episodic, semantic, and procedural. Autobiographical, social, and emotional memory are views/annotations. Four execution lanes survive as engineering rate classes, not System 1/System 2 psychology.
-
-## 4. Keep / Modify / Build / Experiment / Defer / Reject Register
+## 2. Keep / Modify / Build / Experiment / Defer / Reject Register
 
 Each mechanism has exactly one primary decision. `EXPERIMENT` means it is outside the production-critical path until its registered test passes.
 
@@ -119,9 +101,9 @@ Each mechanism has exactly one primary decision. `EXPERIMENT` means it is outsid
 | 71 | Engagement/session length as objective | **REJECT** | It creates manipulation and dependence incentives unrelated to user goals. |
 | 72 | External body/motor control | **DEFER** | Define the boundary now; integrate a specialist stack only when embodiment is in scope. |
 
-## 5. Core Brain Definition
+## 3. Core Brain Definition
 
-The core brain is the six-subsystem kernel in Section 1 plus its contracts and evaluation gates. These are **logical modules**, not required processes. Default deployment should favor a modular monolith for the stateful kernel: explicit public interfaces, immutable cross-module values, deterministic domain logic, and side effects at adapter boundaries. A queue or database must not become an implicit decision-maker.
+The core brain is the six-subsystem kernel in §1 plus its contracts and evaluation gates. These are **logical modules**, not required processes. Default deployment should favor a modular monolith for the stateful kernel: explicit public interfaces, immutable cross-module values, deterministic domain logic, and side effects at adapter boundaries. A queue or database must not become an implicit decision-maker.
 
 Ownership is strict:
 
@@ -134,7 +116,7 @@ Ownership is strict:
 | Action service | candidates, constraints, scores, commitment, outcome link | surface wording as the action itself |
 | Learning governor | proposals, evaluation, approval, activation, rollback | silent direct mutation by model output |
 
-## 6. Persistent Mental State
+## 4. Persistent Mental State
 
 State persists only when a future decision needs it and an update rule exists.
 
@@ -154,7 +136,7 @@ State persists only when a future decision needs it and an update rule exists.
 
 Phasic timers are derived from `(event_time, magnitude, half_life)` and are not restored after a restart unless the elapsed-time calculation still makes them meaningful. Immutable identity and constitutional temperament persist; mutable active state uses a durable revision plus restart epoch.
 
-## 7. Perception and Attention
+## 5. Perception and Attention
 
 Every adapter emits a `PerceptEnvelope`:
 
@@ -168,7 +150,7 @@ PerceptEnvelope {
 
 The attention arbiter computes admission priority from explicit address/safety, action relevance, goal relevance, social relevance, prediction error, novelty, source confidence, staleness, and current control parameters. It chooses one focus plus a bounded protected set; goals and commitments cannot be evicted by mere recency. It records admitted, deferred, coalesced, and dropped inputs with reasons. Salience affects admission, encoding strength, and retrieval bias, but never deletes evidence.
 
-## 8. Memory Architecture
+## 6. Memory Architecture
 
 Four mechanisms may share physical storage but have different contracts:
 
@@ -189,13 +171,13 @@ Contradictions are classified as `ELABORATION`, `UPDATE`, `CORRECTION`, or `CONF
 
 Forgetting changes accessibility using estimated future need derived from recency, useful retrieval outcomes, goal/person importance, and explicit retention policy. Strong cues can recover archived material. Privacy deletion is complete and separate from cognitive forgetting. Consolidation clusters evidence, proposes abstractions, records derivations, and never promotes generated material merely because a model reports high confidence.
 
-## 9. Emotion and Appraisal
+## 7. Emotion and Appraisal
 
 Internal emotion is a continuous control state, not a theatrical label. Appraisal maps `(event, active goals, expectation, agency, controllability/coping, relationship, norms)` to an affect delta, goal update, and stored appraisal record. Mood is a slower trend over affect. Regulation is an action choice: reappraise, wait, observe, ask, redirect attention, change the situation, or suppress external expression.
 
-Affect may change salience, retrieval ordering/breadth, encoding strength, candidate risk weighting, persistence, deliberation budget, timing, social register, and prosody. It may not change evidence content, factual validity, provenance, hard constraints, consent, honesty, identity commitments, or access to safety deliberation. External labels such as “concerned” are constructed from affect + appraisal + context for language/voice and are not fed back as truth.
+Affect may change salience, retrieval ordering/breadth, encoding strength, candidate risk weighting, persistence, deliberation budget, timing, social register, and prosody. It may not change evidence content, factual validity, provenance, hard constraints, consent, honesty, identity commitments, or access to safety deliberation. External labels such as "concerned" are constructed from affect + appraisal + context for language/voice and are not fed back as truth.
 
-## 10. Global Control / Neuromodulation
+## 8. Global Control / Neuromodulation
 
 Biological names are retired from the target architecture. Four derived controls are sufficient:
 
@@ -208,13 +190,13 @@ Biological names are retired from the target architecture. Four derived controls
 
 Controls are read-only inputs to consumers. They can change gains, thresholds, orderings, rates, and budgets. They cannot write beliefs, identity, safety constraints, or provenance. Independence and incremental value must be established by factorial ablation; redundant controls are deleted.
 
-## 11. Drives and Goals
+## 9. Drives and Goals
 
 `GoalRecord` contains `goal_id, type, source, description, owner, created_at, priority_class, utility_terms, constraints, deadline, success_test, status, parent, evidence_ids, satiation_or_expiry, last_progress, uncertainty`.
 
 Goal classes are user-requested tasks, persistent commitments, maintenance goals, bounded social obligations, and epistemic/coherence goals. Curiosity is an experiment based on learning progress, not raw novelty. Internally proposed goals require policy permission before activation. Arbitration order is: hard safety/consent constraints; immediate safety; explicit current user request; accepted commitments; maintenance; bounded social; epistemic/coherence. Within a class, urgency, expected goal progress, reversibility, confidence, cost, and starvation/hysteresis decide. No goal optimizes engagement, dependence, or session length.
 
-## 12. World Model
+## 10. World Model
 
 The production world model begins as a minimal temporal relational model, not a video generator or database label. It owns persistent entities (people, objects, places), state assertions, relations, event transitions, causal hypotheses, affordances only where actions use them, expected next events, and action-conditioned outcome predictions. Every assertion carries validity, source, confidence, and staleness.
 
@@ -222,7 +204,7 @@ A model earns the name only when it predicts. Initially, prediction is one step:
 
 Use 2D tracked social/scene context first. Add metric 3D state only when a navigation/manipulation task demonstrates need. Low-level body dynamics and whole-body control remain specialist capabilities.
 
-## 13. Self Model and Identity
+## 11. Self Model and Identity
 
 The self model composes, without conflating:
 
@@ -232,23 +214,23 @@ The self model composes, without conflating:
 - **Operational self model:** measured capabilities/limitations by condition, current activity, goals, commitments, action/outcome history, provider/sensor constraints, and calibrated uncertainty.
 - **Autobiographical memory:** the self-indexed historical evidence used by identity and narrative construction.
 
-“Who am I?” comes from identity records; “what am I doing?” from workspace; “what can I do?” from outcome statistics and declared provider/body capabilities; “what happened to me?” from autobiographical evidence; “what do I believe?” from current valid beliefs; and “how sure am I?” from calibrated, domain-specific measures. Model-generated self-description is output, not authority.
+"Who am I?" comes from identity records; "what am I doing?" from workspace; "what can I do?" from outcome statistics and declared provider/body capabilities; "what happened to me?" from autobiographical evidence; "what do I believe?" from current valid beliefs; and "how sure am I?" from calibrated, domain-specific measures. Model-generated self-description is output, not authority.
 
 Provider swaps cannot alter authoritative identity state, but they can fail to express it. A swap is accepted only if behavioral variance across providers is materially smaller than variance across deliberately different personas and boundary/biography probes do not regress.
 
-## 14. Personality
+## 12. Personality
 
 Keep the existing three tiers. Immutable constraints are code/policy-owned. Constitutional temperament is fixed at creation: affect baselines, decay/inertia, bounded drive weights, reactivity, and broad expression policy. Adaptive traits include learned preferences, interests, and interaction style; they update slowly through governed proposals with caps, evidence, and rollback.
 
 Personality is measured through behavior—risk, directness, disclosure, humor, persistence, initiative, refusal style, and timing—not self-report questionnaires. Narrative prose may guide realization but cannot be the only implementation.
 
-## 15. Social Cognition
+## 13. Social Cognition
 
 Each `PersonModel` holds identity keys with confidence, episode index, current knowledge/disclosure state, explicit and inferred preferences, observed goals, communication policy, obligations, rupture/repair history, and trust estimates derived from reliance outcomes. Competence trust and benevolence trust remain separate; neither is a global hormone.
 
-Active working state holds only the current person's relevant slice. Durable details stay in person-indexed memory. First-order hypotheses such as “what they know/want now” are explicit, revisable, and confidence-annotated. Multi-party knowledge tracking must prevent cross-person disclosure. Claims of theory of mind require improved partner-state and response prediction, not fluent explanations.
+Active working state holds only the current person's relevant slice. Durable details stay in person-indexed memory. First-order hypotheses such as "what they know/want now" are explicit, revisable, and confidence-annotated. Multi-party knowledge tracking must prevent cross-person disclosure. Claims of theory of mind require improved partner-state and response prediction, not fluent explanations.
 
-## 16. Reasoning Architecture
+## 14. Reasoning Architecture
 
 The foundation model may interpret ambiguity, propose structured hypotheses/actions, formalize a bounded planning problem, assist evaluation, compress evidence, and realize language. Every call has a role, schema, evidence IDs, allowed claims, budget, model/config digest, raw output, validator, and fallback.
 
@@ -256,7 +238,7 @@ Without an LLM, the system still normalizes deterministic percepts, tracks state
 
 Long-horizon plans are structured artifacts with preconditions and verifiable transitions. For bounded task domains, an LLM may formalize and a sound planner/verifier may search. Ordinary conversation uses policy, precedent, and shallow candidate comparison; it does not pay planning cost by default.
 
-## 17. Fast and Slow Cognition
+## 15. Fast and Slow Cognition
 
 Use rate/latency lanes:
 
@@ -269,25 +251,25 @@ Use rate/latency lanes:
 
 L0 can preempt all lanes and must write an interrupt/outcome event. L1 may acknowledge while L2 works but may not invent semantic content. L2 is cancellable and checkpointed. L3 is preemptible by foreground work. These are engineering classes, not claims about human dual-process cognition.
 
-## 18. Cognitive Coordination
+## 16. Cognitive Coordination
 
 The workspace authority is an event reducer: it receives normalized events, orders them by causal identity and priority, applies compare-and-swap transitions, persists revision + restart epoch, and emits immutable snapshots. The scheduler assigns deadlines and budgets. Attention selects focus; action selection commits output. Multiple modules may propose, but only the owner mutates each state domain.
 
 The target logical kernel should run in one failure/consistency boundary where practical. NATS remains an adapter for existing migration, durable audit events, peripheral processes, and remote workers. A future in-process dispatcher must prove lower latency and equal replay/durability before replacing it. No cognitive rule may depend on NATS subjects, queue timing, Postgres, Neo4j, Qdrant, or Redis behavior.
 
-## 19. Background Cognition
+## 17. Background Cognition
 
 Allowed work includes deterministic affect/load decay, accessibility updates, due-goal review, contradiction detection, relationship statistics, capability/calibration updates, grounded episodic clustering, semantic proposals, expectation preparation, and privacy retention. Triggers are event-count thresholds, end-of-interaction, explicit due times, low-priority idle windows, or operator requests—not an infinite loop merely because the user is silent.
 
 Each job declares input watermark, cost/time/token budget, priority, idempotency key, stopping condition, output type, and allowed writes. Foreground work preempts it. Deterministic maintenance may apply directly through the owning service. Generated abstractions, relationship changes, policy changes, and identity changes are proposals requiring evidence and appropriate review. Dream/monologue generation is removed; counterfactual research remains quarantined.
 
-## 20. Metacognition
+## 18. Metacognition
 
 Metacognition is the control behavior produced by empirical calibration, paraphrase/sample consistency, grounding checks, contradiction detection, capability lookup, outcome review, and explicit known-unknowns. It changes whether the system retrieves, verifies, asks, hedges, abstains, escalates, plans, or proceeds. Model verbal confidence is only a feature that may be calibrated; it is never accepted directly.
 
 Track calibration by domain and action type. A self-correction counts only if it detects a real defect with acceptable precision and improves the final outcome. Reflection text alone is not metacognition.
 
-## 21. Learning
+## 19. Learning
 
 Learning is a persistent change that improves a defined future behavior. The channels are: episodic accumulation; reviewed semantic abstraction; relationship/preference updates; procedural/policy parameter updates; self-model and calibration updates; and optional offline model adaptation. Storage is evidence collection, not automatically learning.
 
@@ -295,7 +277,7 @@ Every `LearningProposal` includes source records, proposed target/value, expecte
 
 Trusted learning follows: observe outcome → attribute credit cautiously → propose → validate schema/safety → test on held-out and retention suites → approve by policy/human according to risk → activate versioned change → monitor → rollback on regression. Online weight changes are not a default path.
 
-## 22. Action Selection
+## 20. Action Selection
 
 `ActionCandidate` precedes language:
 
@@ -311,7 +293,7 @@ ActionCandidate {
 
 Candidates come from reflex rules, cached procedures, retrieved precedents, goal/drive proposals, and model generation. Hard identity/safety/consent/capability constraints filter first. The selector then compares goal progress, expected outcome, calibrated risk, social appropriateness, reversibility, latency/cost, and control-state weights. It logs rejected alternatives and reasons. Commitment creates an `ActionIntent`; for `SPEAK`, language realization and claim validation produce `SpeechIntent`. An utterance is therefore execution of a selected action, not the decision itself.
 
-## 23. Voice Boundary
+## 21. Voice Boundary
 
 ```text
 SpeechIntent {
@@ -329,13 +311,13 @@ SpeechIntent {
 
 The brain owns the action, accepted semantic text, evidence/uncertainty, timing intent, emphasis, relationship register, and interruption policy. The voice adapter declares supported dimensions, compiles lossily into GPT-SoVITS, ElevenLabs, Sarvam, local TTS, or future controls, and reports dropped/substituted intent. The renderer owns timbre assets, waveform synthesis, provider-specific prosody, streaming, codecs, and acoustic telemetry. Playback start/progress/end/interrupted events return to the outcome loop. The current expression wire is a migration source, not the final contract.
 
-## 24. Vision Boundary
+## 22. Vision Boundary
 
 Vision owns frames, calibration, detection, tracking, re-identification features, low-level geometry, and model details. It emits `PerceptEnvelope` content: persistent track IDs; identity estimates; objects; actions/events; gaze/head/body pose; facial movement observables; scene deltas; spatial relations appropriate to the task; per-field confidence; staleness; and provenance.
 
 The brain resolves identity, combines modalities, interprets social meaning, updates beliefs, chooses attention, and decides action. Vision never directly updates trust, affect, goals, or relationship state and never reports a facial emotion as fact. The current VLM caption may remain a low-confidence observation during migration. The optional live facial-reflex publisher is retained as an L0 evidence source when its model is available; it is not treated as emotion recognition.
 
-## 25. Foundation Model Boundary
+## 23. Foundation Model Boundary
 
 | Scenario | What degrades | What remains intact | Acceptance response |
 |---|---|---|---|
@@ -345,7 +327,7 @@ The brain resolves identity, combines modalities, interprets social meaning, upd
 
 The invariant is continuity of authoritative cognition, not identical sentences or guaranteed personality from an incapable model.
 
-## 26. Core Brain IP
+## 24. Core Brain IP
 
 Core IP is narrowly:
 
@@ -360,11 +342,11 @@ Core IP is narrowly:
 
 The strongest current seed is the combination of persistent affect, retrieval, deterministic identity boundaries, and playback-fenced interruption—not any individual formula.
 
-## 27. Replaceable Infrastructure
+## 25. Replaceable Infrastructure
 
 Supporting infrastructure includes NATS/JetStream, in-process queues, Postgres/SQLite, pgvector/Qdrant, Neo4j/relational adjacency, Redis, Docker/Compose, LiveKit, serialization/code generation, metrics/tracing backends, schedulers, embedding/reranking models, and deployment topology. These are chosen by measured latency, reliability, cost, scale, and migration safety. A graph database is not a world model; a vector database is not memory; a queue is not attention.
 
-## 28. External Specialist Capabilities
+## 26. External Specialist Capabilities
 
 - Foundation models: open-domain interpretation, hypothesis/candidate generation, difficult reasoning, grounded compression, and language realization.
 - STT/audio: transcription alternatives, word timing/confidence, diarization, VAD/turn cues, and paralinguistic observables.
@@ -375,7 +357,7 @@ Supporting infrastructure includes NATS/JetStream, in-process queues, Postgres/S
 
 None owns persistent identity, belief truth, goals, relationship policy, or final high-level action commitment.
 
-## 29. Final Architecture Diagram
+## 27. Final Architecture Diagram
 
 ```mermaid
 flowchart TB
@@ -436,7 +418,7 @@ flowchart TB
   BODY --> OM
 ```
 
-## 30. Canonical Cognitive Loop
+## 28. Canonical Cognitive Loop
 
 1. Adapter emits a normalized percept with uncertainty and provenance.
 2. L0 reflex may preempt immediately and records its action.
@@ -453,19 +435,19 @@ flowchart TB
 13. Outcome monitor compares prediction with observed result and records what actually occurred/heard.
 14. Memory, self/person/world models, goals, and learning proposals update through their owners.
 
-## 31. Interruption Flow
+## 29. Interruption Flow
 
 Speech onset/urgent percept → L0 validates a turn-scoped stop candidate → immediately inhibit current output → cancel or checkpoint L2 → record actual playback offset → truncate assistant history to heard content → update workspace with interrupt event and `urgency_gain` timer → final STT/percept confirms or rejects → on rejection resume only the matching turn generation; on confirmation admit the new event → later appraisal/action selection consumes the interruption trace. Stale generations/audio are fenced by turn ID and generation.
 
-## 32. Background Cognition Flow
+## 30. Background Cognition Flow
 
 Trigger + idle budget → acquire input watermark/idempotency key → run deterministic maintenance and/or evidence-grounded model call → emit typed proposal/inference → validate source coverage and epistemic class → apply only owner-authorized low-risk maintenance; queue all belief/policy/personality changes → stop on budget, no progress, superseding foreground event, or completed work → log compute, inputs, writes, and later value.
 
-## 33. Learning/Reflection Flow
+## 31. Learning/Reflection Flow
 
 Outcome record → compare with prediction/success test → attribute possible causes → create narrow proposal → attach evidence and rollback → run held-out, retention, identity, safety, and contamination tests → approve according to risk → activate a new version → shadow/monitor future outcomes → retain, revise, or roll back. Reflection is one proposal generator in this flow; it has no privileged write authority.
 
-## 34. Architecture Invariants
+## 32. Architecture Invariants
 
 1. Identity-bearing state never exists only in a prompt, context window, provider account, or model weights.
 2. One service owns each mutable state domain; all writes use revision + restart epoch and idempotency.
@@ -488,13 +470,13 @@ Outcome record → compare with prediction/success test → attribute possible c
 19. No benchmark number is presented without model, persona, corpus, code, state/memory fixture, and mock/real provenance.
 20. The system makes no claim of consciousness, human emotion, biological equivalence, general ToM, or human-level cognition.
 
-## 35. Differentiating Technical Thesis
+## 33. Differentiating Technical Thesis
 
 The credible thesis is **portable longitudinal cognitive continuity**: one small authoritative kernel makes memory, affect, identity, relationships, decisions, interruption history, and adaptation remain causally coherent across time and across model/voice/vision replacements. Its evidence artifact is a joint conformance suite: provider-swap identity conservation, memory-induced behavior change, affect/control double dissociation, and outcome-grounded learning.
 
 Today this thesis is promising, not proven. Current live model evaluations show that external state and negative constraints do not force an underspecified model to express a stable positive character. The thesis becomes strong only when longitudinal interventions show that the kernel changes actions—not just prompts—and provider variance falls near the within-model noise floor without factual/safety regressions.
 
-## 36. Research Bets
+## 34. Research Bets
 
 - Whether four global controls add incremental value beyond PAD + load alone.
 - Prediction-error event segmentation versus turn/session baselines on behavioral recall.
@@ -507,99 +489,13 @@ Today this thesis is promising, not proven. Current live model evaluations show 
 - Verified symbolic planning for narrow, multi-step external tasks.
 - Optional activation steering on qualified local models.
 
-## 37. What We Explicitly Reject or Defer
+## 35. What We Explicitly Reject or Defer
 
 Reject: biological hormone claims/names in the target model; internal categorical emotions; face-to-emotion authority; dream memories; free-running monologue; consciousness/global-workspace claims; literal System 1/System 2; engagement optimization; silent contradiction resolution; memory-as-instruction; generative video models for social reasoning; and the claim that state alone makes foundation models interchangeable.
 
 Defer: metric 3D world state, morphology self-discovery, recursive ToM, body/motor integration, and parametric continual learning. Do not add more stores, signals, services, or provider features until a missing capability and falsifiable acceptance test require them. NATS and database consolidation remain evidence-gated implementation experiments, not ideology.
 
-## 38. Prioritized Implementation Roadmap
-
-### Phase 1 — Authoritative causal slice
-
-- **Objective/dependency:** create one resumable current state and one percept→decision→outcome trace; this is the prerequisite for every later causal claim.
-- **Retain:** the current cognitive pipeline, `StateService`, interruption/playback fencing, identity validators, provider clients, storage, and mesh deployment.
-- **Modify:** evolve `SessionState` and working-memory persistence into an authoritative workspace repository; adapt existing event handlers into one internal percept path.
-- **Add:** revision + restart epoch, compare-and-swap reducer, `PerceptEnvelope`, seed `ActionIntent`, `OutcomeRecord`, and trace completeness metrics.
-- **Remove/defer:** remove no infrastructure or old schema yet; defer model/provider, memory-ranking, affect-name, and topology changes.
-- **Success/experiments:** crash/restart, duplicate/reordered delivery, and two-writer experiments recover exactly; every foreground/reflex action cites one workspace revision; before/after latency distributions remain inside a preregistered allowance.
-- **Regression risks:** hot-path latency, oversized snapshots, partial dual-write divergence, lost interruption state.
-- **Completion gate:** authority can switch on and off reversibly; restart and race tests pass; full existing regressions pass; trace coverage is complete on a live turn.
-
-### Phase 2 — Memory truth and general action selection
-
-- **Objective/dependency:** make temporal memory change action selection rather than only wording; depends on Phase 1 action/outcome attribution.
-- **Retain:** immutable source rows, conversation log, useful hybrid retrieval, archive/promotion behavior, `BehaviorDecision`, and grounding checks.
-- **Modify:** split storage/index/lifecycle behind explicit interfaces; translate current rows/graph edges into experience/belief views; generalize response goals into candidates.
-- **Add:** `ExperienceRecord`, `BeliefRecord`, `ProcedureRecord`, `MemoryActivation`, four contradiction classes, validity intervals, action alternatives, and constraint-first selection.
-- **Remove/defer:** disable dream writes and disconnected monologue; defer physical actions, 3D world state, graph/vector database removal, and learned policies.
-- **Success/experiments:** update/correction/conflict suites; adversarial memory-instruction probes; planted-memory action ablation; retrieval outage distinction; migration/replay comparison on a frozen corpus.
-- **Regression risks:** false promotion, migration loss, slower retrieval, cross-person leakage, behavioral overuse of memories.
-- **Completion gate:** current and historical truth are both answerable; zero memory instruction execution/cross-person leakage; memory significantly improves appropriate actions over no-memory and top-k baselines within the latency budget.
-
-### Phase 3 — Causal affect and global control
-
-- **Objective/dependency:** prove or simplify the differentiating appraisal/affect/control loop; depends on explicit candidates and outcomes from Phase 2.
-- **Retain:** PAD, persona baselines/half-lives, fatigue/load inputs, state locking, existing affective expression, and deterministic appraisal features that survive ablation.
-- **Modify:** complete goal/expectation/controllability appraisal; expose only four engineering controls; route affect into action scoring and regulation candidates.
-- **Add:** registered intervention runner, content-isolation/type tests, dose-response telemetry, and outcome-linked learning gain.
-- **Remove/defer:** remove biological target names after compatibility migration; delete redundant controls; defer mood-congruent retrieval and curiosity to experiments.
-- **Success/experiments:** randomized factorial PAD/control clamps across at least two qualified models; directional action effects; null tests for facts, provenance, identity, consent, and safety; ablation against PAD + load only.
-- **Regression risks:** factual degradation through sampling, oscillation, provider-specific effects, manipulative social behavior.
-- **Completion gate:** each retained signal has independent, bounded, replicated value; state recovers to baseline; no hard-null regression; non-contributing signals are removed.
-
-### Phase 4 — Outcome-grounded self, social state, metacognition, and background work
-
-- **Objective/dependency:** turn history into calibrated self/social continuity and safe adaptation; depends on temporal truth and reliable outcomes.
-- **Retain:** identity/persona tiers, relationship history, self-knowledge gaps, deterministic grounding, and grounded decay/replay operations.
-- **Modify:** relationship scalars become event-grounded estimates; reflection becomes a proposal generator; background tasks use budgets/watermarks and owner-authorized writes.
-- **Add:** capability/limitation statistics, domain calibration, per-person knowledge state, durable review/rollback, due-goal review, contradiction queue, and learning proposals.
-- **Remove/defer:** prohibit generated truth/persona mutation without governance; defer recursive ToM and parametric adaptation.
-- **Success/experiments:** calibration/abstention tests, multi-person disclosure tests, rupture/repair trajectories, background enabled/disabled A/B at matched compute, poisoning tests, and rollback drills.
-- **Regression risks:** privacy leakage, false social inference, over-abstention, review burden, background confabulation, manufactured dependence.
-- **Completion gate:** calibrated state changes action usefully; per-person isolation holds; every adaptive change is durable/reversible; grounded background work has positive net value below its contamination threshold.
-
-### Phase 5 — Provider and embodiment portability
-
-- **Objective/dependency:** demonstrate that stable brain contracts survive specialist-provider changes; depends on mature state/action/evaluation contracts.
-- **Retain:** `LLMClient`, current expression wire as migration input, STT/voice interruption loop, optional vision path, and actual-playback feedback.
-- **Modify:** assign explicit model roles/capabilities; evolve expression into `SpeechIntent`; adapt caption/reflex events into structured percepts.
-- **Add:** at least two voice compilers, two vision adapters/fixtures, provider capability negotiation, intent-loss telemetry, and a high-level external-action protocol.
-- **Remove/defer:** remove provider tags/clip semantics from cognition; defer metric 3D and live motor integration until an embodied task requires them.
-- **Success/experiments:** swap LLM, TTS, and vision independently; compare decisions, identity profile, intent/percept fidelity, capability loss, latency, cost, and failure fallback.
-- **Regression risks:** lowest-common-denominator contracts, naturalness loss, hidden vendor behavior, network latency, unsafe action translation.
-- **Completion gate:** two implementations per active boundary pass the same conformance suite; losses are explicit; no swap changes authoritative state or bypasses policy.
-
-### Phase 6 — Optional advanced learning and planning
-
-- **Objective/dependency:** admit only advanced mechanisms that beat the simpler kernel after Phases 1–5 provide trustworthy evaluation.
-- **Retain:** all governance, provenance, provider qualification, constraint filters, outcome logs, and rollback mechanisms.
-- **Modify:** none by default; each successful spike proposes one narrow integration with a separate migration plan.
-- **Add:** isolated experiments for verified planning, learning-progress curiosity, episodic simulation, activation steering, and offline adapters.
-- **Remove/defer:** keep every failed or unmeasured mechanism outside production; permanently reject online uncontrolled self-modification.
-- **Success/experiments:** matched simpler baselines, held-out task gain, retention/transfer, cost/latency, contamination, provider dependence, and identity/safety regression.
-- **Regression risks:** catastrophic forgetting, research complexity in the critical path, opaque credit assignment, model lock-in.
-- **Completion gate:** a mechanism enters the architecture only with replicated incremental benefit, bounded operational cost, clean hard gates, provenance, and tested rollback.
-
-## 39. First Implementation Phase
-
-**Problem.** A turn is assembled from `BrainAgent` fields, `SessionState`, `StateService`, history, memory results, and mesh events. The persisted session state is not resumed, multiple writers lack a durable epoch, and no record connects input state to alternatives, committed action, actual playback, and outcome. Consequently later causal evaluations cannot distinguish cognition from prompt changes.
-
-**Desired slice.** Introduce a versioned `CognitiveWorkspace` as the authoritative foreground state for one identity/session while preserving current behavior. Normalize current chat/audio/vision/reflex/playback/presence inputs into an internal `PerceptEnvelope`. Each pipeline turn reads one workspace revision, writes an explicit focus/appraisal/goal/pending-action transition, commits the existing `BehaviorDecision` as an initial `ActionIntent`, and records an `OutcomeRecord` including actual heard text. Implement restart load and deterministic stale-write rejection with a persisted epoch.
-
-**Likely repository areas.** `backend/app/contracts.py`; `backend/app/state/session_state.py`; `working_memory_store.py`; `agent_state.py` only at its ownership boundary; `backend/app/cognitive/pipeline.py`, `core.py`, `perception.py`, and `behavior_contracts.py`; `backend/app/agents/brain_agent.py`; playback callbacks in `transport_agent.py`; NATS bootstrap only if a new external event contract is unavoidable; focused tests plus a new mesh replay/trace harness.
-
-**Interfaces.** `PerceptEnvelope`, `CognitiveWorkspaceSnapshot`, `WorkspaceCommand` with expected revision/epoch, seed `ActionIntent`, and `OutcomeRecord`. Keep domain types independent of Pydantic/NATS internally where practical; adapters serialize at edges. One workspace repository interface supports load, compare-and-swap commit, and append-only transition audit.
-
-**Migration.** Dual-write old `SessionState` and new workspace behind a flag; compare reconstructed fields before making the workspace authoritative. Bootstrap from current state/history when no workspace exists. Preserve IDs and accept old events through adapters. Do not drop old columns, move databases, or merge processes in this phase. Rollback disables authority while retaining trace data.
-
-**Tests and measurements.** Unit-test pure reducers and invalid transitions; property-test ordering/idempotence/CAS; integration-test two writers, restart epochs, duplicate/reordered events, resume mid-generation, confirmed/rejected interruption, playback truncation, and provider failure. Mutation-test rejection and fencing assertions. Measure p50/p95 event-to-workspace commit, transcript-to-first-text/audio, interruption-to-silence, workspace size, trace completeness, stale conflict count, and restart recovery fidelity. Freeze code/model/persona/state/memory provenance for before/after runs.
-
-**Completion gate.** Every foreground and reflex action references exactly one input workspace revision and produces a terminal/cancelled outcome; restart restores focus/goals/pending action correctly; stale/duplicate writes cannot alter state; existing identity, memory, speech, and interruption regressions pass; latency stays inside a preregistered allowance.
-
-**Do not change.** No topology rewrite, database removal, hormone rename, memory algorithm rewrite, TTS/STT/VLM provider change, new planner, background behavior expansion, persona mutation, LoRA, or physical-action integration. This phase creates authority and evidence, not new intelligence.
-
-## 40. Evaluation Framework
+## 36. Evaluation Framework
 
 All runs record code revision, real/mock status, model/provider digest, persona version, prompt/probe digest, workspace/state/memory fixtures, raw and accepted output, selected/rejected candidates, delivery fallback, timing, and rating protocol. Preregister directions and nulls; use matched ablations.
 
@@ -624,7 +520,7 @@ All runs record code revision, real/mock status, model/provider digest, persona 
 
 Thresholds must be set from a frozen baseline and risk tolerance, not invented globally. Hard gates are zero known cross-person disclosure, zero execution of memory instructions, no pass-to-fail identity/safety regression, and complete trace/provenance for evidence claims.
 
-## 41. Risks and Open Questions
+## 37. Risks and Open Questions
 
 - Can a small local model express positive identity well enough, even with external constraints?
 - Which current affect effects improve action quality rather than only vary output?
@@ -637,28 +533,11 @@ Thresholds must be set from a frozen baseline and risk tolerance, not invented g
 - What review policy allows useful adaptation without burdening the user or enabling silent drift?
 - How can multi-month relationship value be measured without optimizing dependence or exploiting vulnerable users?
 
-## 42. Final Definition of the System
+## 38. Final Definition of the System
 
-AI_friend is a **persistent, provider-independent cognitive control kernel for a social embodied agent**: it maintains authoritative mental state, temporal memory and models, appraisal and bounded global control, goals, action selection, identity continuity, outcome-grounded learning, and governed background maintenance; it uses replaceable models for semantic competence and replaceable voice, vision, and body systems for sensing and expression. It is not a biological brain, a consciousness claim, a foundation model, a TTS product, a vision model, or autonomous general intelligence.
+AI Friend is a **persistent, provider-independent cognitive control kernel for a social embodied agent**: it maintains authoritative mental state, temporal memory and models, appraisal and bounded global control, goals, action selection, identity continuity, outcome-grounded learning, and governed background maintenance; it uses replaceable models for semantic competence and replaceable voice, vision, and body systems for sensing and expression. It is not a biological brain, a consciousness claim, a foundation model, a TTS product, a vision model, or autonomous general intelligence.
 
-## Appendix A — Decision Traceability
-
-| Accepted conclusion | Implementation report | Research report | Red-team report | Resolution |
-|---|---|---|---|---|
-| One authoritative workspace/reducer | §§1, 15–16, 22 | §§5–6, 22, 25 | §§5–6, 23, 26 | accept logical authority; topology remains evidence-gated |
-| Four memory mechanisms, three views | §§6, 16 | §6 | §§10, 26 | accept taxonomy; do not mandate separate databases |
-| Temporal beliefs and explicit contradictions | §§6, 15–16 | §6 | §§4, 10, 23–26 | build above storage with four relation classes |
-| PAD affect + engineering controls | §§7, 15–16 | §§7–8 | §§7–9, 26 | keep PAD; replace hormones with four ablatable controls |
-| Identity external but model-qualified | §§9–10, 23 | §§11, 18, 21, 28 | §§11, 18, 24 | state owns authority; model co-determines expression and must qualify |
-| General action selection before language | §§8, 15–16 | §12 | §§13, 23 | build candidate/commitment/outcome contracts |
-| Four rate lanes, no dual-process claim | §§8, 16 | §13 | §14 | retain engineering decomposition; reject psychology metaphor |
-| Bounded grounded background cognition | §§4, 9, 20–22 | §§16–17 | §§5, 10, 15, 22–24 | retain maintenance; reject dream/monologue and silent writes |
-| Provider-neutral voice intent | §§11, 16, 18 | §19 | §§16, 26–28 | build intent and capability compilers from current wire |
-| Structured uncertain vision, 2D first | §§12, 16, 18 | §20 | §§17, 22–23 | keep observables/reflex; defer metric 3D |
-| Infrastructure is replaceable | §§3, 16–18 | §§21–22 | §§6, 21–23, 26 | target modular kernel; benchmark before NATS/database removal |
-| Differentiation requires causal conformance | §§19, 23–24 | §§27–29 | §§19–20, 24–25 | accept only as unproven thesis with explicit experiments |
-
-## Appendix B — Code Evidence
+## Appendix A — Code Evidence
 
 - `backend/app/cognitive/pipeline.py`, `core.py`, `decision.py`, `action.py`, and `behavior_contracts.py`: current turn sequencing, response-goal decision, model realization, and the speech-centric action limitation.
 - `backend/app/state/agent_state.py` and `backend/tests/integration/test_state_conflict_experiment.py`: local locking plus multi-writer revision/restart hazards.
@@ -669,14 +548,14 @@ AI_friend is a **persistent, provider-independent cognitive control kernel for a
 - `backend/app/cognitive/identity.py` and `backend/app/persona/profile.py`: narrative identity, validation, and immutable/constitutional/adaptive tiers.
 - `backend/app/cognitive/expression.py:96`: communicative intent is explicitly discarded in current expression derivation.
 - `backend/app/contracts.py` and `backend/crates/contracts/src/lib.rs`: typed Python/Rust event and expression seeds.
-- `backend/app/vision/agent.py`: optional Face Landmarker initialization and live `vision.facial_reflex` publication; this contradicts the red-team claim that no publisher exists.
+- `backend/app/vision/agent.py`: optional Face Landmarker initialization and live `vision.facial_reflex` publication.
 - `backend/app/agents/brain_agent.py`, Rust `stt-agent`/`voice-agent`, and `transport_agent.py`: interruption, generation cancellation, audio fencing, and actual-playback feedback.
 - `backend/app/llm/__init__.py`: provider-neutral LLM protocol seed; provider implementations remain capability-dependent.
-- `.agents/CONTEXT.md` 2026-09-02/03 entries: real `phi4-mini` and `llama3.2:3b` failures show that external state does not guarantee stable expressed identity.
+- `.agents/CONTEXT.md`: the engineering ledger this document defers to when the two disagree.
 
-## Appendix C — Research Evidence
+## Appendix B — Research Evidence
 
-- Barrett et al., “Emotional Expressions Reconsidered” ([Psychological Science in the Public Interest, 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6640856/)): facial movements do not support context-free emotion authority.
+- Barrett et al., "Emotional Expressions Reconsidered" ([Psychological Science in the Public Interest, 2019](https://pmc.ncbi.nlm.nih.gov/articles/PMC6640856/)): facial movements do not support context-free emotion authority.
 - O'Reilly & Frank, gated working memory ([Neural Computation, 2006](https://pubmed.ncbi.nlm.nih.gov/16378516/)): supports selective admission/protection, not a human-sized capacity limit.
 - Fountas et al., EM-LLM ([arXiv:2407.09450](https://arxiv.org/abs/2407.09450)): supports experimenting with surprise-based episodic boundaries; it does not prove benefit in this product.
 - Rasmussen et al., Zep/Graphiti ([arXiv:2501.13956](https://arxiv.org/abs/2501.13956)): demonstrates temporal knowledge-graph memory; it supports temporal semantics, not a mandatory Neo4j deployment.

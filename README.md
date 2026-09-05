@@ -22,7 +22,10 @@
 
 Most "AI companion" products are a character picker in front of a shared cloud
 model. This is the opposite bet: **one friend, described by you, that lives
-entirely on your own hardware.**
+entirely on your own hardware.** The novelty here is the **Brain** — a
+persistent cognitive/affect/memory architecture (see `ARCHITECTURE.md`) that
+gives the agent continuity a stateless prompt can't. Voice and vision are
+supporting modalities the Brain drives, not separate pillars.
 
 - **You write who they are, in prose.** No template picker, no slider grid.
   "She's blunt, hates small talk, gets genuinely annoyed when I dodge a

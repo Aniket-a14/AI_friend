@@ -1,8 +1,7 @@
-# Humanoid Brain Architecture: Integration Boundaries & External Contracts
+# Brain Architecture: Integration Boundaries & External Contracts
 
 ## Document Status
-- **Classification:** External Integration Specification & Partnership Architecture
-- **Audience:** Voice AI Partners (ElevenLabs, Sarvam), Humanoid Robotics Engineers, Research Labs
+- **Classification:** Integration specification for anyone building an alternate voice, vision, or model adapter
 - **Character Encoding:** Strict 7-bit ASCII
 - **Authoritative System Commit:** Merged on `main` (`156f3b7`)
 
@@ -10,9 +9,9 @@
 
 ## 1. Executive Summary
 
-The Humanoid Brain Architecture is intentionally decoupled from specific foundation models, speech synthesis engines, visual perception models, and physical robot chassis. The cognitive system operates as an autonomous deliberation kernel communicating with external subsystems over strictly typed, versioned contracts.
+The Brain architecture is intentionally decoupled from specific foundation models, speech synthesis engines, visual perception models, and physical robot chassis. The cognitive system operates as an autonomous deliberation kernel communicating with external subsystems over strictly typed, versioned contracts.
 
-An external partner (e.g. ElevenLabs, Sarvam AI, or a humanoid robotics OEM) can integrate directly with the brain without needing to understand or modify its internal neural weights, graph databases, or affective appraisal routines.
+An integrator (a voice provider, a robotics OEM, or a contributor building a new adapter) can integrate directly with the brain without needing to understand or modify its internal neural weights, graph databases, or affective appraisal routines.
 
 ```
        +-------------------------------------------------------------+
@@ -259,7 +258,7 @@ The brain architecture does not mandate proprietary cloud services. Every infras
 
 ---
 
-## 6. Integration Guide for External Partners
+## 6. Integration Guide for Contributors
 
 ### 6.1 Integrating a New Voice Provider (e.g. Sarvam AI)
 To connect a new voice provider to the brain:
@@ -305,4 +304,4 @@ The integration boundaries of the Humanoid Brain enforce clean separation of con
 - **Cognition & Memory** deliberate and decide.
 - **Voice & Actuators** consume `SpeechIntent` and `ExternalActionIntent`.
 
-This architecture ensures long-term portability, vendor independence, and zero lock-in for commercial partners.
+This architecture ensures long-term portability and vendor independence: no voice engine, vision model, or LLM provider can lock in the agent's identity or state.

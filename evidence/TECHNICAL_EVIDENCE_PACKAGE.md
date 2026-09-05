@@ -1,6 +1,6 @@
-# Humanoid Brain Technical Evidence Package
+# Brain Architecture: Technical Evidence Index
 
-**System Version:** AI Friend Humanoid Brain Architecture (Phases 01-07 Consolidated)
+**System Version:** AI Friend Brain Architecture
 **Validated Git Revision:** `156f3b7` / `7a7626f` (branch `main`)
 **Date:** 2026-09-05
 **Target Hardware:**
@@ -11,8 +11,7 @@
 ### Package Documents
 - [BENCHMARK_SUMMARY.md](BENCHMARK_SUMMARY.md): Consolidated local and GPU micro-benchmark empirical tables, soak telemetry, and latency budgets.
 - [DEMO_SCENARIOS.md](DEMO_SCENARIOS.md): Four reproducible scripted demonstration scenarios proving model independence, bi-temporal truth, fast barge-in, and governed rollback.
-- [INTEGRATION_BOUNDARIES.md](INTEGRATION_BOUNDARIES.md): Formal inbound/outbound contracts (`PerceptEnvelope`, `SpeechIntent`, `ExternalActionIntent`, `StructuredVisionPercept`) and integration guides for voice, robotics, and foundation model partners.
-- [IP_REVIEW_CANDIDATES.md](IP_REVIEW_CANDIDATES.md): Four technical candidates for professional prior-art and intellectual property review.
+- [INTEGRATION_BOUNDARIES.md](INTEGRATION_BOUNDARIES.md): Formal inbound/outbound contracts (`PerceptEnvelope`, `SpeechIntent`, `ExternalActionIntent`, `StructuredVisionPercept`) and integration guides for voice, robotics, and foundation model adapters.
 
 ---
 
@@ -410,21 +409,18 @@ An intellectually honest assessment of current limitations:
 
 ---
 
-## 27. Partnership Readiness
+## 27. Integration Fit by Adapter Type
 
-### For Voice AI Companies (e.g. ElevenLabs, Sarvam AI)
-- **What They Have:** World-class TTS synthesis, acoustic prosody models, and streaming audio infrastructure.
-- **What This Brain Adds:** Deep conversational memory, emotional continuity, relationship dynamics, and cognitive state. Turns a voice synthesizer into a persistent companion.
-- **Integration Seam:** Direct connection via `SpeechIntent` and `AudioInboundEvent` over WebRTC / LiveKit or NATS JetStream.
+### Voice/TTS engines (e.g. ElevenLabs, Sarvam AI, local GPT-SoVITS)
+- A TTS engine supplies synthesis, acoustic prosody, and streaming audio. The brain adds conversational memory, emotional continuity, relationship dynamics, and cognitive state on top of it.
+- Integration seam: `SpeechIntent` and `AudioInboundEvent` over WebRTC/LiveKit or NATS JetStream.
 
-### For Humanoid Robotics Companies
-- **What They Have:** Bipedal locomotion, physical chassis, motor control, and spatial perception.
-- **What This Brain Adds:** The cognitive humanoid mind: persistent identity, social memory, affective modulation, conversational timing, and verified action gating.
-- **Integration Seam:** `StructuredVisionPercept` for camera inputs and `ExternalActionIntent` for physical gesture and navigation dispatch.
+### Humanoid robotics chassis
+- A robotics stack supplies locomotion, physical chassis, motor control, and spatial perception. The brain adds persistent identity, social memory, affective modulation, conversational timing, and verified action gating.
+- Integration seam: `StructuredVisionPercept` for camera inputs and `ExternalActionIntent` for physical gesture and navigation dispatch.
 
-### For Foundation Model Labs
-- **What They Have:** Massive parameter base models with broad world knowledge.
-- **What This Brain Adds:** A production runtime architecture proving that their models can be integrated into persistent, safe, long-running agentic applications without prompt bloat or catastrophic drift.
+### Foundation models
+- A foundation model supplies broad world knowledge and language competence. The brain adds a runtime architecture for integrating that model into a persistent, safe, long-running agentic application without prompt bloat or catastrophic drift.
 
 ---
 
