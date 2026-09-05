@@ -16891,3 +16891,81 @@ anything Codex's side changed, since Codex made no website edits).
 NOT done: reconciling the ~7 other stale "Phase 0X Package B" comments noted
 above in `decision.py`; those were out of scope for a merge (neither branch's
 diff reached them) and are flagged for a future pass, not fixed here.
+
+## 2026-09-05 -- Brain-first repositioning: repo triage + website 7.1 revamp
+
+Product positioning shifted: the Brain (cognitive/affect/memory architecture)
+is now the primary novelty, with Voice and Vision explicitly secondary. Two
+things followed from that, done as one continuous pass (commits `769c66b`
+through `071b0d8`).
+
+**Repo triage.** `outreach/`, `partnership/`, `orchestration/`,
+`evidence/IP_REVIEW_CANDIDATES.md`, and the root-level internal cleanup
+reports were gitignored (not history-rewritten) following the repo's own
+existing `/AUDIT.md`-style convention — this was internal BD/process material
+that had drifted onto public `main` in the prior multi-agent cleanup pass,
+including named individuals in cold-outreach drafts.
+`FINAL_HUMANOID_BRAIN_ARCHITECTURE.md` was repurposed into a public
+`ARCHITECTURE.md` (dropped the audit-provenance framing, kept the real
+mechanism register and citations). `DOCUMENTATION_INDEX.md` and `README.md`
+updated to match.
+
+**Website revamp.** Five real backend formulas were ported to TypeScript
+(`website/lib/brain-math/`: calibration, theory-of-mind, trust-attachment,
+memory-activation; `persona-compiler-math.ts`), each with unit tests
+asserting hand-computed values against the actual Python formula, not just
+"renders without crashing." These back four new live playground demos (Trust
+& Attachment, Memory Activation & Decay, Metacognitive Abstention, Theory of
+Mind) plus a rewritten Persona Compiler demo that now recomputes synchronously
+instead of faking a compile with `setTimeout`. The homepage was reordered to
+lead with the Brain (Endocrine -> Cognitive Turn -> Persona -> Trust ->
+Memory -> Mesh -> DevEx -> Voice -> Benchmarks -> Security -> CTA); the old
+"Coming Soon — Roadmap Preview" block (which mixed a since-real 3D-memory-graph
+mockup with genuinely-unbuilt WebGPU/Colab items) was retired in favor of a
+new `/roadmap` page with honest status text and no blurred fake UI underneath.
+`coming-soon-overlay.tsx` itself was kept — it's still legitimately used on
+`/changelog`, flagged doc pages, and the `/showcase` registry preview, none of
+which this pass touched.
+
+The Research page was rewritten around 5 Brain-first pillars with a new
+`website/lib/research-citations.ts` (35 typed citations). Every citation was
+mechanically checked against its claimed title/authors before publishing, not
+trusted from the source bibliography — 2 were already known-fabricated from
+an earlier pass (excluded); of the remaining 35, 6 more had a real sourcing
+error (wrong author byline on 2 otherwise-real papers, a wrong DOI digit, two
+stale arXiv IDs, a wrong ISBN) and were corrected with independently-verified
+identifiers rather than dropped or left wrong. A user-supplied, untracked
+reference paper (own unpublished work, not committed) was used only to source
+additional citation links (e.g. the Anderson et al. 2004 ACT-R paper, missing
+from the prior list) — its benchmark numbers were explicitly not carried over
+since they predate later corrections in this codebase (e.g. cortisol
+half-life). That same stale-number bug was independently found and fixed on
+the *old* research page's own endocrine section: it still said 600s where the
+docs page and the codebase have said 4500s since the Bucket 11 correction.
+
+Two unrelated bugs reported after the revamp were also fixed: (1) the
+homepage hero heading could overlap the fixed nav on a narrow-tall phone or a
+short-landscape phone, because sizing used width-only Tailwind breakpoints
+that can't see either failure mode — fixed with a `vmin`-based `clamp()` (the
+smaller of viewport width/height) plus a `max-height:480px` safety net that
+drops the optional tag row and clamps the subtext before ever letting the
+heading overflow; (2) docs pages with LaTeX (`$...$`/`$$...$$`) rendered the
+raw text literally because no math plugin was wired into the ReactMarkdown
+pipeline — added `remark-math` + `rehype-katex` + katex's stylesheet.
+
+Verified throughout: `vitest` (28/28), `tsc --noEmit`, `next build` (41/41
+pages) after every phase; a live lychee link-check pass (0 errors, matching
+the CI invocation) after the repo triage; and repeated headless-browser
+passes (Playwright, installed to an isolated scratch dir rather than the
+project's pnpm-managed `node_modules`) confirming zero console/page errors —
+across the homepage, all 8 playground tabs, `/roadmap`, `/research`,
+`/showcase`, and a same-page slider-drag check proving the persona compiler
+genuinely recomputes live. A final full-site crawl (23 routes, all top-level
+pages plus a sample of doc pages) confirmed 200s and zero console errors
+everywhere.
+
+NOT done: `git worktree list` is clean, but both local and `origin` still
+carry many stale branches predating this pass (`phase-01`..`phase-07` for
+claude/codex/integration, assorted old `fix/*`/`feat/*` branches) — flagged
+to the user, not deleted, since branch deletion wasn't asked for and isn't
+reversible.
