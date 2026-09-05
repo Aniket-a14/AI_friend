@@ -85,13 +85,17 @@ export default function LandingPage() {
         <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "20%", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", maskImage: "linear-gradient(to top, black 0%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 100%)" }} />
         <div className="absolute inset-x-0 bottom-0 z-10 pointer-events-none" style={{ height: "38%", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", maskImage: "linear-gradient(to top, black 0%, transparent 100%)", WebkitMaskImage: "linear-gradient(to top, black 0%, transparent 100%)" }} />
 
-        <div className="h-20" />
-
-        <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col px-6 md:px-12 pb-16 max-w-4xl">
+        <div className="absolute inset-0 z-30 flex flex-col justify-end px-6 md:px-12 pt-20 pb-10 sm:pb-16 max-w-4xl">
           <h1
-            className="text-6xl sm:text-7xl md:text-8xl font-light text-[#111] leading-[1.0] tracking-tight mb-8"
+            className="font-light text-[#111] tracking-tight mb-4 sm:mb-6 md:mb-8"
             style={{
               fontFamily: '"IBM Plex Sans", sans-serif',
+              // vmin (the SMALLER of viewport width/height) so this shrinks for a
+              // narrow-tall phone (width-constrained wrapping) and a short-wide
+              // landscape phone (height-constrained) alike -- width-only Tailwind
+              // breakpoints can't see either case, only vh would miss the first.
+              fontSize: "clamp(1.5rem, 9vmin, 6.5rem)",
+              lineHeight: 1.08,
               opacity: heroReady ? 1 : 0,
               filter: heroReady ? "blur(0px)" : "blur(24px)",
               transform: heroReady ? "translateY(0px)" : "translateY(32px)",
@@ -102,7 +106,7 @@ export default function LandingPage() {
           </h1>
 
           <p
-            className="text-base sm:text-lg text-black/50 max-w-xl mb-8 leading-relaxed"
+            className="text-sm sm:text-base md:text-lg text-black/50 max-w-xl mb-4 sm:mb-6 md:mb-8 leading-relaxed [@media(max-height:480px)]:line-clamp-2"
             style={{
               opacity: heroReady ? 1 : 0,
               filter: heroReady ? "blur(0px)" : "blur(16px)",
@@ -117,7 +121,7 @@ export default function LandingPage() {
             100% local, MIT licensed.
           </p>
 
-          <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="flex flex-wrap items-center gap-3 mb-3 sm:mb-4 md:mb-6">
             <Link
               href="/playground"
               className="px-6 py-3 rounded-xl bg-[#111] text-white text-xs tracking-wider font-medium hover:bg-[#333] transition-all shadow-sm flex items-center gap-2"
@@ -141,7 +145,10 @@ export default function LandingPage() {
             </a>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          {/* Hidden on very short viewports (e.g. a phone in landscape) so this
+              optional row is what gets dropped, rather than the heading
+              overflowing under the fixed nav to make room for it. */}
+          <div className="flex flex-wrap gap-2 [@media(max-height:480px)]:hidden">
             {["100% Local-First", "MIT Licensed", "ACT-R Memory Decay", "Tonic/Phasic Endocrine", "NATS JetStream Mesh"].map((label) => (
               <Tag key={label}>{label}</Tag>
             ))}
