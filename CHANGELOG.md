@@ -16,6 +16,71 @@ measured, what was deliberately left undone, and why — see
 It is the source of truth; where any other document in this repo disagrees
 with it, the ledger is right.
 
+## v7.1.0
+
+A repositioning release: the Brain (cognitive/affect/memory architecture) is
+now presented as the project's primary novelty, with Voice and Vision as
+explicitly secondary, supporting modalities. This release has two parts — a
+repo content cleanup, and a full website revamp built around it — plus three
+follow-up bug fixes found and closed after the revamp shipped.
+
+**Repo cleanup.** `outreach/`, `partnership/`, `orchestration/`, and
+`evidence/IP_REVIEW_CANDIDATES.md` — internal BD/process material that had
+drifted onto public `main` in a prior cleanup pass, including named
+individuals in cold-outreach drafts — are now gitignored, following this
+repo's own existing convention for exactly this category of content (no
+history rewrite). `FINAL_HUMANOID_BRAIN_ARCHITECTURE.md` was repurposed into
+a public `ARCHITECTURE.md`.
+
+**Website: honest, live playground.** Every remaining "Coming Soon" blurred
+mockup with zero real functionality behind it is gone. Five real backend
+formulas (ACT-R memory activation, Marsh trust + Bowlby attachment,
+metacognitive Brier-calibration, theory-of-mind concept tracking, the persona
+compiler's `_infer_temperament`) were ported to TypeScript, each with unit
+tests asserting hand-computed values against the actual Python — not just
+"renders without crashing." These back four new live demos (Trust &
+Attachment, Memory Activation & Decay, Metacognitive Abstention, Theory of
+Mind) plus a rewritten Persona Compiler that now recomputes synchronously
+instead of faking a compile with `setTimeout`. The Voice Showcase drops its
+fake play button for an honest static parameter table. Anything genuinely not
+built (WebGPU in-browser inference, Colab training runners, a community
+persona registry, real voice-clip assets) moved to a new `/roadmap` page that
+says so plainly, with no mockup underneath.
+
+**Website: reordered around the Brain.** The homepage now leads with
+Endocrine → Cognitive Turn → Persona → Trust & Attachment → Memory Activation
+→ Mesh → DevEx → Voice (moved down) → Benchmarks → Security → CTA. The
+Showcase's companion recipes lead with Affective Dynamics (plus two new
+recipes: trust/Theory-of-Mind tracking, and metacognitive honesty) and end
+with Voice. The Research page was rewritten around 5 pillars (Affective
+Computing, ACT-R Memory & Retrieval, Turn-Taking, Edge Middleware, Lifespan
+Development) backed by a new typed citation list — every citation was
+mechanically checked against its claimed title/authors before publishing; 6
+of 35 had a real, fixable sourcing error (wrong author bylines, a wrong DOI
+digit, two stale arXiv IDs, a wrong ISBN) and were corrected with
+independently-verified identifiers rather than dropped or left wrong.
+
+**Fixed after the revamp shipped:**
+- The homepage hero heading could overlap the fixed nav bar on a narrow-tall
+  phone or a short-landscape phone — width-only breakpoints couldn't see
+  either failure mode. Fixed with a `vmin`-based `clamp()` (the smaller of
+  viewport width/height) plus a last-resort safety net for genuinely extreme
+  short viewports.
+- Docs pages with LaTeX (`$...$` / `$$...$$`) rendered the raw text
+  literally — no math-parsing plugin was wired into the markdown pipeline.
+  Added `remark-math` + `rehype-katex`.
+- The changelog's own unreleased-roadmap preview entry claimed a "Home
+  Assistant integration agent" and "peer-to-peer friend syncing," neither of
+  which has any grounding anywhere in the codebase or ledger. Replaced with
+  the same 4 items already vetted on `/roadmap`, and linked the two pages
+  together so they can't silently drift apart again.
+
+Verified throughout: `vitest` (28/28), `tsc --noEmit`, `next build` (41/41
+pages), a live lychee link-check (0 errors), and repeated headless-browser
+passes confirming zero console errors across every route this release
+touched, including a same-page slider-drag check proving the persona
+compiler genuinely recomputes live rather than simulating a delay.
+
 ## v7.0.0
 
 The community-release roadmap (`.agents/CONTEXT.md`, "Community roadmap
