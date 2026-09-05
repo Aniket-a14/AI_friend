@@ -13,9 +13,10 @@ import { PersonaCompilerDemo } from "@/components/persona-compiler-demo"
 import { CognitiveTurnFlow } from "@/components/cognitive-turn-flow"
 import { EndocrineSimulator } from "@/components/endocrine-simulator"
 import { VoiceShowcase } from "@/components/voice-showcase"
+import { TrustAttachmentVisualizer } from "@/components/trust-attachment-visualizer"
+import { MemoryActivationVisualizer } from "@/components/memory-activation-visualizer"
 import { BenchmarkPreview } from "@/components/benchmark-preview"
 import { SecurityComplianceGrid } from "@/components/security-compliance-grid"
-import { ComingSoonOverlay } from "@/components/coming-soon-overlay"
 import { REPO_URL } from "@/lib/site"
 
 // ─── Intersection Observer hook ──────────────────────────────────────────────
@@ -109,9 +110,11 @@ export default function LandingPage() {
               transition: "opacity 0.8s cubic-bezier(0.16,1,0.3,1) 120ms, filter 0.8s cubic-bezier(0.16,1,0.3,1) 120ms, transform 0.8s cubic-bezier(0.16,1,0.3,1) 120ms",
             }}
           >
-            Describe them in your own words. They speak in a cloned voice you gave
-            them, experience mathematical affect dynamics that shape their speech, remember who you are, and run entirely on your own
-            hardware — 100% local, MIT licensed.
+            Describe them in your own words. They remember who you are through
+            ACT-R-scored recall, build trust and attachment through real appraisal
+            math, and reason through a 7-stage cognitive loop before answering in a
+            cloned voice you gave them — running entirely on your own hardware,
+            100% local, MIT licensed.
           </p>
 
           <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -139,30 +142,29 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {["100% Local-First", "MIT Licensed", "NATS JetStream Mesh", "ACT-R Memory Decay", "Tonic/Phasic Endocrine"].map((label) => (
+            {["100% Local-First", "MIT Licensed", "ACT-R Memory Decay", "Tonic/Phasic Endocrine", "NATS JetStream Mesh"].map((label) => (
               <Tag key={label}>{label}</Tag>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── SECTION 1: INTERACTIVE COMPILER STUDIO ─────────────────────────── */}
+      {/* ── SECTION 1: ENDOCRINE BIOLOGY & SAMPLING SIMULATOR (LIVE & ACTIVE) ─ */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
-            <PixelIcon type="platform" size={36} />
-            <div className="mt-4 flex items-center gap-2">
-              <Tag>FREEFORM PERSONA COMPILER</Tag>
-            </div>
+            <PixelIcon type="integrations" size={36} />
+            <div className="mt-4"><Tag>NEUROCHEMICAL SIMULATION</Tag></div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
-              Describe them in prose.<br />Never pick from a preset list.
+              Mood that changes how<br />the LLM generates words.
             </h2>
             <p className="text-sm text-black/50 mt-3 leading-relaxed">
-              Our compiler translates natural language into a strictly enforced 3-tier constitution (Immutable Safety Core, Constitutional Temperament, Adaptive Traits) with explainable parameter mappings.
+              Cortisol and Dopamine aren't decorative strings — they mathematically modulate LLM sampling temperature, top-p, and token ceilings in real time.
             </p>
           </div>
 
-          <PersonaCompilerDemo />
+          {/* Fully visible and live interactive endocrine biology simulator */}
+          <EndocrineSimulator />
         </div>
       </section>
 
@@ -184,62 +186,70 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SECTION 3: ENDOCRINE BIOLOGY & SAMPLING SIMULATOR (LIVE & ACTIVE) ─ */}
+      {/* ── SECTION 3: INTERACTIVE COMPILER STUDIO ─────────────────────────── */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
-            <PixelIcon type="integrations" size={36} />
-            <div className="mt-4"><Tag>NEUROCHEMICAL SIMULATION</Tag></div>
+            <PixelIcon type="platform" size={36} />
+            <div className="mt-4 flex items-center gap-2">
+              <Tag>FREEFORM PERSONA COMPILER</Tag>
+            </div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
-              Mood that changes how<br />the LLM generates words.
+              Describe them in prose.<br />Never pick from a preset list.
             </h2>
             <p className="text-sm text-black/50 mt-3 leading-relaxed">
-              Cortisol and Dopamine aren't decorative strings — they mathematically modulate LLM sampling temperature, top-p, and token ceilings in real time.
+              Our compiler translates natural language into a strictly enforced 3-tier constitution (Immutable Safety Core, Constitutional Temperament, Adaptive Traits) with explainable parameter mappings.
             </p>
           </div>
 
-          {/* Fully visible and live interactive endocrine biology simulator */}
-          <EndocrineSimulator />
+          <PersonaCompilerDemo />
         </div>
       </section>
 
-      {/* ── SECTION 4: ACOUSTIC PROSODY & VOICE SHOWCASE (GLOSSY BLUR OVERLAY) ── */}
+      {/* ── SECTION 4: TRUST & ATTACHMENT (LIVE, NEW) ───────────────────────── */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
             <PixelIcon type="agents" size={36} />
-            <div className="mt-4 flex items-center gap-2">
-              <Tag>PHYSICAL ACOUSTIC RENDERING</Tag>
-              <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-semibold">
-                COMING SOON
-              </span>
-            </div>
+            <div className="mt-4"><Tag>MARSH TRUST + BOWLBY ATTACHMENT</Tag></div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
-              Studio-quality 32kHz voice,<br />cloned from 8 seconds.
+              Trust that's earned,<br />not scripted.
             </h2>
             <p className="text-sm text-black/50 mt-3 leading-relaxed">
-              Physical neural voice synthesis powered by GPT-SoVITS with dynamic pause bias scaling and instant sub-millisecond barge-in interruption (&lt;1ms).
+              Every appraisal updates benevolence, competence, and integrity independently, and attachment grows on a slower, frequency-gated curve than trust does.
             </p>
           </div>
 
-          <ComingSoonOverlay
-            title="COMING SOON"
-            description="In-browser 32kHz neural voice audio player and emotional prosody testing lab is in active development. Player layout preview visible below."
-            eta="Roadmap Preview"
-            blurAmount="md"
-          >
-            <VoiceShowcase />
-          </ComingSoonOverlay>
+          <TrustAttachmentVisualizer />
         </div>
       </section>
 
-      {/* ── SECTION 5: THE MESH ARCHITECTURE ───────────────────────────────── */}
+      {/* ── SECTION 5: MEMORY ACTIVATION & DECAY (LIVE, NEW — replaces the old ─
+             fake 3D-memory-graph "coming soon" card) ────────────────────────── */}
+      <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
+        <div className="max-w-6xl mx-auto space-y-8">
+          <div className="max-w-2xl">
+            <PixelIcon type="pricing" size={36} />
+            <div className="mt-4"><Tag>ACT-R BASE-LEVEL ACTIVATION</Tag></div>
+            <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
+              Memory that decays<br />like the real thing.
+            </h2>
+            <p className="text-sm text-black/50 mt-3 leading-relaxed">
+              Recency, frequency, importance, and emotional proximity combine into a single recall score — the exact formula every retrieval path in the backend shares.
+            </p>
+          </div>
+
+          <MemoryActivationVisualizer />
+        </div>
+      </section>
+
+      {/* ── SECTION 6: THE MESH ARCHITECTURE ───────────────────────────────── */}
       <section id="mesh" className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-8 mb-16">
             <div>
               <PixelIcon type="agents" size={36} />
-              <div className="mt-4"><Tag>THE 9-AGENT MESH</Tag></div>
+              <div className="mt-4"><Tag>HOW THE BRAIN'S AGENTS COORDINATE</Tag></div>
               <RevealText className="mt-4 text-4xl md:text-5xl font-light tracking-tight leading-[1.05]">
                 {"Separate processes,\nnot function calls."}
               </RevealText>
@@ -253,56 +263,30 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SECTION 6: GET STARTED / DEVEX ─────────────────────────────────── */}
+      {/* ── SECTION 7: GET STARTED / DEVEX ─────────────────────────────────── */}
       <DevExSection />
 
-      {/* ── SECTION 7: UPCOMING ROADMAP CAPABILITIES (GLOSSY BLUR OVERLAY) ─── */}
+      {/* ── SECTION 8: ACOUSTIC PROSODY & VOICE SHOWCASE (honest, secondary) ── */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
-            <PixelIcon type="platform" size={36} />
-            <div className="mt-4"><Tag>ROADMAP PREVIEW</Tag></div>
+            <PixelIcon type="integrations" size={36} />
+            <div className="mt-4 flex items-center gap-2">
+              <Tag>VOICE — A SUPPORTING MODALITY</Tag>
+            </div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
-              Upcoming capabilities &<br />next-generation tooling.
+              Studio-quality 32kHz voice,<br />cloned from 8 seconds.
             </h2>
             <p className="text-sm text-black/50 mt-3 leading-relaxed">
-              Features currently in active development for upcoming releases.
+              The Brain drives what gets said and how it's said; GPT-SoVITS renders it with dynamic pause-bias scaling and sub-millisecond barge-in (&lt;1ms).
             </p>
           </div>
 
-          <ComingSoonOverlay
-            title="COMING SOON — ROADMAP PREVIEW"
-            description="WebGPU in-browser inference, 1-click cloud Colab runners, and 3D Neo4j memory graph visualizers are scheduled for the next major release."
-            eta="Roadmap Target"
-            blurAmount="md"
-          >
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-6 bg-white rounded-2xl border border-black/[0.08] space-y-3">
-                <span className="font-mono text-[10px] uppercase text-black/40">Browser Native</span>
-                <h3 className="text-lg font-light text-[#111]">WebGPU In-Browser Voice</h3>
-                <p className="text-xs text-black/50 leading-relaxed">Execute quantized 1B LLM models and ONNX voice synthesis directly in the browser via WebAssembly.</p>
-                <div className="pt-2 font-mono text-[11px] text-black/40">~1.8GB Unified VRAM</div>
-              </div>
-
-              <div className="p-6 bg-white rounded-2xl border border-black/[0.08] space-y-3">
-                <span className="font-mono text-[10px] uppercase text-black/40">Cloud Training</span>
-                <h3 className="text-lg font-light text-[#111]">1-Click Colab Runners</h3>
-                <p className="text-xs text-black/50 leading-relaxed">Offload 32kHz voice fine-tuning and benchmark sweeps to free cloud T4 GPUs with SSH tunneling.</p>
-                <div className="pt-2 font-mono text-[11px] text-black/40">Zero Local Heat</div>
-              </div>
-
-              <div className="p-6 bg-white rounded-2xl border border-black/[0.08] space-y-3">
-                <span className="font-mono text-[10px] uppercase text-black/40">Cognitive Visualizer</span>
-                <h3 className="text-lg font-light text-[#111]">3D Memory Graph Studio</h3>
-                <p className="text-xs text-black/50 leading-relaxed">Inspect spreading activation in the learned mental lexicon across Neo4j entity graphs in WebGL.</p>
-                <div className="pt-2 font-mono text-[11px] text-black/40">ACT-R Decay Physics</div>
-              </div>
-            </div>
-          </ComingSoonOverlay>
+          <VoiceShowcase />
         </div>
       </section>
 
-      {/* ── SECTION 8: EMPIRICAL BENCHMARKS & HARDWARE ──────────────────────── */}
+      {/* ── SECTION 9: EMPIRICAL BENCHMARKS & HARDWARE ──────────────────────── */}
       <section className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
@@ -320,7 +304,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SECTION 9: DATA SOVEREIGNTY & SECURITY ─────────────────────────── */}
+      {/* ── SECTION 10: DATA SOVEREIGNTY & SECURITY ────────────────────────── */}
       <section id="privacy" className="py-24 px-6 md:px-12 lg:px-20 border-t border-black/[0.06]">
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
@@ -338,7 +322,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SECTION 10: CTA ────────────────────────────────────────────────── */}
+      {/* ── SECTION 11: CTA ────────────────────────────────────────────────── */}
       <section className="relative py-32 px-6 md:px-12 lg:px-20 border-t border-black/[0.06] overflow-hidden">
         <img
           src="/images/footer.png"

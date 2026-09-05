@@ -134,7 +134,10 @@ export function MemoryActivationVisualizer() {
                   }`}
                   style={{
                     backgroundColor: TOPIC_COLORS[n.topic],
-                    opacity: 0.25 + norm * 0.75,
+                    // Rounded to avoid a hydration mismatch: Chromium re-serializes
+                    // style.opacity at 6 significant digits, so a raw float can read
+                    // back different from what was rendered server-side.
+                    opacity: Number((0.25 + norm * 0.75).toFixed(3)),
                     borderColor: "rgba(0,0,0,0.08)",
                   }}
                 />
