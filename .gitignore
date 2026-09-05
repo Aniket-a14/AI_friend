@@ -125,6 +125,36 @@ evals_out/
 # Same reasoning as /AUDIT.md above.
 /COGNITIVE_ARCHITECTURE_SURVEY.md
 
+# Partner/investor outreach drafts and pipeline tracker (2026-09-05): named
+# real companies and individuals in cold-outreach copy. Internal BD execution
+# material, not a project deliverable -- same reasoning as /AUDIT.md above,
+# and the same category of content that convention was written to exclude.
+/outreach/
+
+# Partnership pitch deck, one-pager, PoC proposals, and due-diligence FAQ
+# (2026-09-05), written for specific named target companies. BD/sales
+# collateral, not contributor or user documentation. Same reasoning as
+# /AUDIT.md above.
+/partnership/
+
+# Multi-agent cleanup-orchestration ledger (2026-09-05): phase gates,
+# benchmark plans, and cross-agent review transcripts from the internal
+# development process, not documentation of the shipped system. Same
+# reasoning as /AUDIT.md above.
+/orchestration/
+
+# Patent/IP-candidate analysis (2026-09-05) naming specific mechanisms as
+# review candidates with prior-art search vectors -- the document itself
+# says this should be reviewed by counsel before open-sourcing. Same
+# reasoning as /AUDIT.md above.
+/evidence/IP_REVIEW_CANDIDATES.md
+
+# Internal audit reports of the 2026-09-05 cleanup/validation pass itself
+# (process telemetry, not reference documentation). Same reasoning as
+# /AUDIT.md above.
+/REPOSITORY_CLEANUP_REPORT.md
+/FINAL_SYSTEM_VALIDATION_REPORT.md
+
 # Live agent identity state (cognitive/identity.py's default when
 # IDENTITY_BASE_PATH is unset) -- a SQLite db plus the persona's own working
 # copy of personality.json/history.json, written by any local run. Runtime
