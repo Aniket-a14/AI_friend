@@ -53,7 +53,7 @@ export interface PersonaPreset {
 export interface CompanionRecipe {
   id: string
   title: string
-  category: "Memory Seeding" | "Voice Cloned Intimacy" | "Affective Dynamics" | "Proactive Presence"
+  category: "Affective Dynamics" | "Memory Seeding" | "Proactive Presence" | "Voice Cloned Intimacy"
   description: string
   implementationDetails: string[]
   codeSnippet: string
@@ -237,8 +237,59 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
 
 export const COMPANION_RECIPES: CompanionRecipe[] = [
   {
+    id: "affective-mood-dynamics",
+    title: "1. Affective Mood & Endocrine Dynamics",
+    category: "Affective Dynamics",
+    description: "Your companion experiences real neurochemical fatigue and emotional momentum that shape their conversational tempo and word choices.",
+    implementationDetails: [
+      "Cortisol (4500s half-life) lowers LLM temperature for focused, cautious speech when stressed.",
+      "Dopamine (90s half-life) increases Top-P for creative humor and expansive banter.",
+      "Conversational fatigue naturally bounds max response tokens after long late-night sessions.",
+    ],
+    codeSnippet: `# app/cognitive/action.py :: _compute_endocrine_options
+# Temperature narrows with stress; top_p widens with reward -- no cross-coupling
+temperature = clamp(0.9 - cortisol * 0.6, 0.0, 1.0)
+top_p = clamp(0.70 + dopamine * 0.25, 0.0, 1.0)`,
+    targetFiles: ["backend/app/cognitive/action.py", "backend/app/cognitive/appraisal.py"],
+  },
+  {
+    id: "trust-theory-of-mind",
+    title: "2. Trust & Theory of Mind Tracking",
+    category: "Affective Dynamics",
+    description: "Your companion tracks what you actually said against what you seem to believe you said, and moves trust along three independent axes instead of one blended score.",
+    implementationDetails: [
+      "extract_belief_discrepancies() diffs the conversation's tracked concepts against a running belief model, catching quiet self-contradictions instead of ignoring them.",
+      "update_from_appraisal() moves Marsh's three trust components — benevolence, competence, integrity — independently per turn, so one bad moment doesn't erase months of demonstrated care.",
+      "Bowlby attachment grows on its own slower curve, scaled by interaction_count/100, so intimacy is earned over many conversations rather than assigned on day one.",
+    ],
+    codeSnippet: `# backend/app/state/agent_state.py :: update_from_appraisal
+# Benevolence, competence, integrity move independently -- not one blended "trust" scalar
+trust_benevolence += delta * relationship_impact
+trust_competence  += delta * (0.6 * goal_congruence + 0.4 * relevance)
+attachment        += epsilon * trust * min(1.0, interaction_count / 100)`,
+    targetFiles: ["backend/app/cognitive/tom.py", "backend/app/state/agent_state.py"],
+  },
+  {
+    id: "metacognitive-abstention",
+    title: "3. Metacognitive Honesty & Abstention",
+    category: "Affective Dynamics",
+    description: "Your companion doesn't take its own stated confidence at face value — it discounts it against a per-domain Brier-calibrated track record, and will say \"I'm not sure\" instead of guessing in domains where it's been wrong before.",
+    implementationDetails: [
+      "Every prediction's real outcome feeds a running Brier score per domain, so confidence about a movie recommendation and confidence about a medical question calibrate separately.",
+      "Calibrated confidence, not the model's raw stated confidence, is what actually gates the response.",
+      "Four deterministic directives — PROCEED, HEDGE, ASK_CLARIFICATION, VERIFY — map calibrated confidence to a concrete behavior, not a vibe.",
+    ],
+    codeSnippet: `# backend/app/cognitive/calibration.py :: evaluate_directive
+calibrated = raw_confidence * (1 - 0.5 * min(1.0, brier_score))
+if calibrated >= 0.75: return PROCEED
+if calibrated >= 0.50: return HEDGE
+if calibrated >= 0.30: return ASK_CLARIFICATION
+return VERIFY`,
+    targetFiles: ["backend/app/cognitive/calibration.py"],
+  },
+  {
     id: "biography-memory-seeding",
-    title: "1. Lifelong Biography & Lore Seeding",
+    title: "4. Lifelong Biography & Lore Seeding",
     category: "Memory Seeding",
     description: "Seed your companion with years of shared history, childhood memories, inside jokes, and personal values through Markdown biographical context.",
     implementationDetails: [
@@ -254,39 +305,8 @@ and value unvarnished honesty. Maya teases me when I get into perfectionist para
     targetFiles: ["personal/biography.md", "backend/app/persona/profile.py"],
   },
   {
-    id: "voice-cloned-intimacy",
-    title: "2. 8-Second Voice Cloned Intimacy",
-    category: "Voice Cloned Intimacy",
-    description: "Enroll an authentic 32kHz cloned voice using 8 seconds of microphone audio, with 4 emotional reference styles (Calm, Warm, Concerned, Excited).",
-    implementationDetails: [
-      "Captures clean 16kHz audio via Web Audio API or terminal record_voice.py.",
-      "Quantized GPT-SoVITS model extracts acoustic timbre without robotic artifacts.",
-      "Dual-path Whisper + SenseVoice enables a fast speculative barge-in reflex, targeting sub-150ms interruption.",
-    ],
-    codeSnippet: `# Record 8-second reference audio
-python backend/scripts/audio/record_voice.py --duration 8
-# Sets REF_AUDIO_PATH and REF_TEXT in .env for studio-quality 32kHz speech`,
-    targetFiles: [".env", "backend/voice_samples/", "backend/crates/voice-agent/"],
-  },
-  {
-    id: "affective-mood-dynamics",
-    title: "3. Affective Mood & Endocrine Dynamics",
-    category: "Affective Dynamics",
-    description: "Your companion experiences real neurochemical fatigue and emotional momentum that shape their conversational tempo and word choices.",
-    implementationDetails: [
-      "Cortisol (4500s half-life) lowers LLM temperature for focused, cautious speech when stressed.",
-      "Dopamine (90s half-life) increases Top-P for creative humor and expansive banter.",
-      "Conversational fatigue naturally bounds max response tokens after long late-night sessions.",
-    ],
-    codeSnippet: `# app/cognitive/action.py :: _compute_endocrine_options
-# Temperature narrows with stress; top_p widens with reward -- no cross-coupling
-temperature = clamp(0.9 - cortisol * 0.6, 0.0, 1.0)
-top_p = clamp(0.70 + dopamine * 0.25, 0.0, 1.0)`,
-    targetFiles: ["backend/app/cognitive/action.py", "backend/app/cognitive/appraisal.py"],
-  },
-  {
     id: "proactive-presence-outreach",
-    title: "4. Proactive Presence & Reconnect Queuing",
+    title: "5. Proactive Presence & Reconnect Queuing",
     category: "Proactive Presence",
     description: "Your friend doesn't just wait for you to type — they think while you're away, consolidate memories during REM sleep, and reach out spontaneously.",
     implementationDetails: [
@@ -300,5 +320,20 @@ if presence.is_reconnected and proactive_queue.has_pending():
     # "Hey, I was just thinking about that book you mentioned yesterday..."
     await nats.publish("chat.output", thought)`,
     targetFiles: ["backend/app/agents/subconscious_agent.py", "backend/app/state/proactive_queue.py"],
+  },
+  {
+    id: "voice-cloned-intimacy",
+    title: "6. 8-Second Voice Cloned Intimacy",
+    category: "Voice Cloned Intimacy",
+    description: "Enroll an authentic 32kHz cloned voice using 8 seconds of microphone audio, with 4 emotional reference styles (Calm, Warm, Concerned, Excited).",
+    implementationDetails: [
+      "Captures clean 16kHz audio via Web Audio API or terminal record_voice.py.",
+      "Quantized GPT-SoVITS model extracts acoustic timbre without robotic artifacts.",
+      "Dual-path Whisper + SenseVoice enables a fast speculative barge-in reflex, targeting sub-150ms interruption.",
+    ],
+    codeSnippet: `# Record 8-second reference audio
+python backend/scripts/audio/record_voice.py --duration 8
+# Sets REF_AUDIO_PATH and REF_TEXT in .env for studio-quality 32kHz speech`,
+    targetFiles: [".env", "backend/voice_samples/", "backend/crates/voice-agent/"],
   },
 ]

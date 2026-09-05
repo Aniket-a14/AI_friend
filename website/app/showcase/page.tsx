@@ -162,7 +162,7 @@ export default function ShowcasePage() {
             <span className="text-[10px] font-mono uppercase tracking-widest text-black/40">Architecture & Mechanics</span>
             <h2 className="text-2xl font-light text-[#111] mt-1">Companion Creation & Seeding Guides</h2>
             <p className="text-xs text-black/50 mt-1">
-              How the 4 cognitive layers combine to turn an LLM into an embodied personal friend.
+              How the 6 cognitive layers combine to turn an LLM into an embodied personal friend.
             </p>
           </div>
 
