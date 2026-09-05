@@ -3,6 +3,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import remarkMath from "remark-math"
+import rehypeKatex from "rehype-katex"
+import "katex/dist/katex.min.css"
 import { findDocPage, getAdjacentPages } from "@/lib/docs-nav"
 import { getAllDocSlugs, getDocSource } from "@/lib/docs-content"
 import { ComingSoonOverlay } from "@/components/coming-soon-overlay"
@@ -34,7 +37,8 @@ export default async function DocPage({ params }: { params: Promise<{ slug: stri
   const content = (
     <div className="max-w-2xl">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex]}
         components={{
           h2: (props) => <h2 className="mt-10 mb-3 text-xl font-light border-t border-black/[0.06] pt-8" {...props} />,
           h3: (props) => <h3 className="mt-6 mb-2 text-base font-medium" {...props} />,
