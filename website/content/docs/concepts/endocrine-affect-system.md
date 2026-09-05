@@ -26,6 +26,30 @@ $$\text{Phasic}(t) = \text{Phasic}_0 \cdot e^{-\lambda t} \quad \text{where } \l
 
 Because phasic channels operate independently of anti-correlated tonic baselines, the agent can experience realistic complex emotions, such as being **simultaneously stressed and rewarded**.
 
+### 3. A Third Channel: Adrenaline
+
+A third hormone, **Adrenaline**, is phasic-only — it has no tonic baseline, only a decaying burst (half-life $120\text{ seconds}$), fired by startle/interruption events and lifting arousal directly:
+
+$$\text{Arousal}_{\text{lift}} = 0.3 \cdot \text{Adrenaline}$$
+
+Unlike cortisol and dopamine, adrenaline doesn't have a slow-moving mood-like component — it's purely a fast reflex signal, matching its role as an interruption/shock reaction rather than a sustained mood.
+
+---
+
+## Trust and Attachment (Marsh + Bowlby)
+
+Alongside affect, every relationship tracks three independent trust components — **benevolence**, **competence**, and **integrity** (Marsh, 1994) — plus a separate **attachment** value (Bowlby). These update from the same per-turn appraisal that drives PAD:
+
+$$\text{Trust}_{\text{benevolence}} \mathrel{+}= \delta \cdot RI \qquad \text{Trust}_{\text{competence}} \mathrel{+}= \delta \cdot (0.6G + 0.4R) \qquad \text{Trust}_{\text{integrity}} \mathrel{+}= \delta \cdot NA$$
+
+where $RI$ is relationship impact, $G$ is goal congruence, $R$ is relevance, and $NA$ is norm alignment — all appraisal outputs, not hand-tuned dials. Attachment grows separately, scaled by both trust and how many interactions have happened so far:
+
+$$\text{Attachment} \mathrel{+}= \epsilon \cdot \text{Trust} \cdot \min\left(1, \frac{\text{interaction\_count}}{100}\right)$$
+
+This is why attachment is slow to build even with high trust: a friend who trusts you immediately (high benevolence/competence/integrity from the first conversation) still needs repeated interaction — the $\min(1, n/100)$ term — before attachment itself catches up. Trust can be earned in one exchange; attachment cannot. Both $\delta$ (trust change rate) and $\epsilon$ (attachment growth rate) are persona fields, seeded per-friend from how the description reads (see [Persona Constitution](/docs/concepts/persona-constitution)) — a guarded character and a quick-to-trust one respond to the same events at genuinely different rates.
+
+Try this live: the [Trust & Attachment Visualizer](/playground) in the playground runs this exact formula against appraisal sliders you control.
+
 ---
 
 ## Dynamic LLM Sampling Modulation

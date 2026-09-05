@@ -24,15 +24,27 @@ export const DOCS_NAV: DocSection[] = [
     ],
   },
   {
-    title: "Concepts & Architecture",
+    title: "Brain: Cognitive Architecture",
     pages: [
-      { title: "Mesh Architecture", slug: "concepts/architecture", description: "9-agent decoupled signal-bus coordinated over NATS JetStream." },
-      { title: "Endocrine & Affect Biology", slug: "concepts/endocrine-affect-system", description: "Tonic PAD baselines, phasic cortisol/dopamine bursts, and LLM sampling modulation." },
+      { title: "Architecture of Mind", slug: "concepts/architecture-of-mind", description: "The 7-stage cognitive turn and the BDI loop underneath it, from perception to closure." },
+      { title: "Endocrine & Affect System", slug: "concepts/endocrine-affect-system", description: "Tonic/phasic cortisol, dopamine, and adrenaline; Marsh trust and Bowlby attachment; LLM sampling modulation." },
       { title: "Memory & Learned Lexicon", slug: "concepts/memory-systems", description: "ACT-R power-law decay, Neo4j knowledge graphs, and subconscious REM reflection." },
       { title: "3-Tier Persona Constitution", slug: "concepts/persona-constitution", description: "Immutable safety core, constitutional temperament, and adaptive trait evolution." },
-      { title: "Speech & Voice Pipeline", slug: "concepts/speech-voice-pipeline", description: "Dual-path whisper.cpp/SenseVoice STT, GPT-SoVITS 32kHz, and barge-in mechanics." },
-      { title: "Visual Appraisal System", slug: "concepts/vision-appraisal", description: "Moondream VLM screen and camera observer with habituation dampening." },
+      { title: "Theory of Mind & Metacognition", slug: "concepts/theory-of-mind-and-metacognition", description: "Tracking what the user knows and believes, and calibrated confidence that gates when the agent hedges or abstains." },
+    ],
+  },
+  {
+    title: "Mesh & Systems Architecture",
+    pages: [
+      { title: "Mesh Architecture", slug: "concepts/architecture", description: "9-agent decoupled signal-bus coordinated over NATS JetStream." },
       { title: "Privacy & Data Sovereignty", slug: "concepts/privacy", description: "Local-first isolation, zero external data egress, and hardware confinement." },
+    ],
+  },
+  {
+    title: "Voice & Vision: Supporting Modalities",
+    pages: [
+      { title: "Speech & Voice Pipeline", slug: "concepts/speech-voice-pipeline", description: "Dual-path whisper.cpp/SenseVoice STT, GPT-SoVITS 32kHz, and barge-in mechanics." },
+      { title: "Visual Appraisal System", slug: "concepts/vision-appraisal", description: "Moondream VLM screen and camera observer with habituation dampening. Opt-in and secondary to the Brain." },
     ],
   },
   {

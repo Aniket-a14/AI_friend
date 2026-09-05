@@ -7,11 +7,11 @@ const NAV_LINKS = [
   { label: "Download",    href: "/download" },
   { label: "Playground",  href: "/playground" },
   { label: "Docs",        href: "/docs" },
-  { label: "Benchmarks",  href: "/benchmarks" },
-  { label: "Changelog",   href: "/changelog" },
-  { label: "Comparison",  href: "/comparison" },
   { label: "Research",    href: "/research" },
   { label: "Showcase",    href: "/showcase" },
+  { label: "Benchmarks",  href: "/benchmarks" },
+  { label: "Comparison",  href: "/comparison" },
+  { label: "Changelog",   href: "/changelog" },
   { label: "About",       href: "/about" },
 ]
 

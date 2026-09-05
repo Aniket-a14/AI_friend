@@ -77,7 +77,7 @@ export function EndocrineSimulator() {
             />
             <div className="flex justify-between text-[10px] text-black/40 mt-1.5">
               <span>Calm / Relaxed</span>
-              <span>Half-life: 600s</span>
+              <span>Half-life: 4500s</span>
               <span>High Alert / Defensive</span>
             </div>
           </div>
