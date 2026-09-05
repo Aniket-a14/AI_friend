@@ -121,7 +121,12 @@ async def test_fact_consolidation(reflection_service, mock_llm_service, mock_gra
 
 
 @pytest.mark.asyncio
-async def test_identity_evolution_trigger(reflection_service, mock_llm_service):
+async def test_identity_evolution_trigger(reflection_service, mock_llm_service, monkeypatch):
+    """Phase 07: LEARNING_REVIEW_REQUIRED now defaults True, so this test
+    (which exercises the legacy direct-apply path) pins it back to False
+    explicitly -- the governed-review path is covered separately in
+    test_learning_review.py."""
+    monkeypatch.setattr(Config, "LEARNING_REVIEW_REQUIRED", False)
     # Mock LLM suggesting a persona change with Confidence Gating
     mock_llm_service.generate.side_effect = [
         "[]",  # Facts (empty)

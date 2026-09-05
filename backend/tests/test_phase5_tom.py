@@ -284,7 +284,11 @@ async def test_pipeline_tom_integration():
     )
 
     # Mock decision to return custom ToM metadata
-    async def mock_decide(event, snapshot, memory_activations=None):
+    async def mock_decide(event, snapshot, memory_activations=None, **kwargs):
+        # Phase 07: PHASE_03_AFFECT_CONTROL now defaults True, so the
+        # pipeline also passes `global_controls` (and possibly other
+        # keyword-only extras) to `decide()` -- accepted and ignored here
+        # since this test only cares about the ToM metadata path.
         event.metadata["tom_inferences"] = {
             "inferred_valence": 0.9,
             "inferred_arousal": 0.4,

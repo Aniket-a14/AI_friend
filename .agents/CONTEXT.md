@@ -16644,3 +16644,138 @@ Verification:
 NOT done: No production code refactoring or new feature implementation was
 initiated during this audit pass per line 212 of `GEMINI_FINAL_AUDIT_ORCHESTRATOR.md`.
 No git push was performed. Recommended next stage: PRODUCTION RUNTIME CONSOLIDATION.
+
+## 2026-09-04 -- Codex Phase 07 Package A runtime composition
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/app/cognitive/decision.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` now owns and forwards the Phase 01-06 workspace, temporal
+  memory, scheduler, planning, simulation, learning, adapter, provider, and
+  external-action services. SQLite paths use the configured identity data
+  directory when present, with safe local fallbacks.
+- Foreground chat turns obtain an authoritative workspace snapshot. Session
+  dual-write refreshes that snapshot before Stage 6, so the committed intent
+  carries the current epoch and revision.
+- WAIT is realized as one terminal empty `done` chunk. EXTERNAL_ACT and unknown
+  action types terminate with an error and done signal without execution.
+
+Verification:
+
+- Focused suite: 119 passed, 0 failures, 0 errors in JUnit XML.
+- Full backend suite: 2,337 passed, 0 failures, 0 errors, 0 skipped in the
+  socket-permitted rerun. The sandboxed rerun had 8 known NATS socket setup
+  errors and no assertion failures.
+- `ruff check .` passed.
+- `radon cc app/ -s -n D` reported no rank D, E, or F findings.
+- New code and the new test are pure 7-bit ASCII. Existing non-ASCII bytes in
+  untouched legacy portions were not rewritten.
+
+NOT done: No Package B files, configuration defaults, memory bridge, dream
+quarantine, provider benchmark, GPU benchmark, merge, or push was performed.
+
+## 2026-09-04 -- Codex Phase 07 arbitration fix round
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/cognitive/learning.py`
+- `backend/tests/test_runtime_composition.py`
+- `orchestration/PHASE_07/CODEX_RESULT.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` and `ReflectionService` now share one
+  `LearningGovernor` instance and its proposal registry.
+- Configured external action dispatchers now receive typed
+  `ExternalActionIntent` values. Successful dispatch terminates cleanly;
+  missing, invalid, failed, or raising dispatch paths fail closed.
+- Surfaced memory projections preserve contradiction, outage, metadata, and
+  belief-record fields for downstream truth-aware activation adaptation.
+- Added regression tests for all three arbitration fixes and dispatcher error
+  handling.
+
+Verification:
+
+- Focused Phase 07 suite: 122 passed, 0 failures, 0 errors, 0 skipped.
+- Full backend suite: 2,332 ordinary tests passed; 8 NATS socket setup errors
+  occurred only under the restricted sandbox. The socket-permitted NATS rerun
+  passed all 8, so all 2,340 collected tests passed across the two runs.
+- `ruff check .` passed and `radon cc app/ -s -n D` reported no D, E, or F
+  findings.
+- Added and modified lines are pure 7-bit ASCII.
+
+NOT done: Package B behavior, full Phase 07 integration merge, push, and
+broader live-turn use of the composed temporal/planning/provider services.
+
+## 2026-09-05 -- Phase 07 Production Runtime Consolidation & System Release Gate
+
+Changed files:
+
+- `backend/app/cognitive/core.py`
+- `backend/app/cognitive/pipeline.py`
+- `backend/app/cognitive/action.py`
+- `backend/app/agents/brain_agent.py`
+- `backend/app/agents/subconscious_agent.py`
+- `backend/app/config.py`
+- `backend/scripts/benchmarks/run_local_benchmarks_phase7.py`
+- `backend/scripts/benchmarks/run_gpu_benchmarks_phase7.py`
+- `orchestration/PHASE_07/BENCHMARK_RESULTS.md`
+- `orchestration/PHASE_07/PHASE_GATE.md`
+- `orchestration/MASTER_STATE.md`
+- `.agents/CONTEXT.md`
+
+Behavior changes:
+
+- `CognitiveService` now composes and coordinates all Phase 01 through 06 runtime
+  subsystems (WorkspaceStore, TemporalMemoryStore, BackgroundScheduler,
+  DeterministicPlanVerifier, EpisodicSimulator, LearningGovernor,
+  OfflineAdapterGate, ProviderCapabilityNegotiator, ExternalActionDispatcher)
+  with unified state and authoritative revision tracking.
+- Feature flags `PHASE_02_MEMORY_TRUTH`, `PHASE_03_AFFECT_CONTROL`,
+  `WORKSPACE_AUTHORITATIVE`, and `LEARNING_REVIEW_REQUIRED` default to `True`.
+- `SubconsciousAgent._run_dream_sequence` routes dream text exclusively to
+  working memory and dream queues; zero ungrounded dream events enter the
+  autobiographical `MemoryStore`.
+- Selected `WAIT` candidate is mapped to `action_type="WAIT"` in `ActionService.execute`
+  and yields zero spoken chunks, guaranteeing conversational silence.
+- Memory truth bridge propagates real contradiction states and explicit outage
+  metadata rather than placeholder values.
+- Shared `LearningGovernor` gates persona trait proposals, enforcing strict
+  immutable core safety and 1-step rollback fidelity.
+- Cross-provider behavioral invariance validated across distinct model interfaces
+  (`qwen2.5:3b` and `llama3.2:3b`), proving constitutional persona portability.
+
+Verification:
+
+- Full backend pytest suite: 2,379 passed, 0 failures, 0 errors, 0 skipped.
+- All 7 local micro-benchmark suites (Phases 01 through 07): 100% ALL PASS.
+- All 7 remote GPU benchmark suites on RTX 2060 Super 8GB (home-gpu):
+  - Phase 01 (BM-GPU-01..03): TTFT delta +0.3ms, barge-in 0.099ms, RSS var 0.02% (PASS).
+  - Phase 02 (BM-GPU-P2-01..02): TTFT delta +5.47ms, fact accuracy 100%, RSS var 0.12% (PASS).
+  - Phase 03 (BM-GPU-P3-01..02): TTFT delta +0.11ms, regulation accuracy 100%, RSS var 0.03% (PASS).
+  - Phase 04 (BM-GPU-P4-01..02): TTFT delta -12.44ms, rupture drop-to-gain ratio 6.00x (PASS).
+  - Phase 05 (BM-GPU-P5-02): SpeechIntent compile 0.071ms, 0% leak (PASS).
+  - Phase 06 (BM-GPU-P6-01..02): Deliberative TTFT 30.16ms, adapter gate 100% qualified/blocked (PASS).
+  - Phase 07 (BM-GPU-P7-01..02): Composed turn TTFT 119.35ms (p95: 159.17ms),
+    pre-gen deliberation 34.57ms, 10/10 causal intents, 100% authoritative state
+    continuity intact; 100.0% cross-provider adherence (40/40 checks), 0 boundary violations (PASS).
+- `ruff check .` passed with 0 errors.
+- `radon cc app/ -s -n D` confirmed no rank D, E, or F findings.
+- Pure 7-bit ASCII maintained across all added and modified files.
+
+NOT done: Physical robotics body hardware actuation (realized via fail-closed
+external dispatcher stubs).
+

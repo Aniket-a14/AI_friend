@@ -763,15 +763,19 @@ class SubconsciousAgent(BaseAgent):
             )
             dream_text = dream_text.strip().strip("\"'")
             if dream_text:
-                logger.info(f"[Dream Insight] Link: '{dream_text}'")
-
-                await self.memory_store.add_memory(
-                    content=f"[Dream Insight] {dream_text}",
-                    importance=0.6,
-                    emotion=0.4,
-                    source="subconscious_dream",
+                # Sections 19, 37 and Invariant 12: generated background
+                # content cannot self-promote to truth. A dream is a
+                # surreal, unverified association between graph entities,
+                # not a lived event -- writing it into MemoryStore via
+                # add_memory would let it be recalled later as an
+                # autobiographical memory indistinguishable from something
+                # that actually happened. It is logged only, as an
+                # ephemeral subconscious event with no persistence path.
+                logger.info(
+                    "[Subconscious] Dream insight generated (ephemeral "
+                    "quarantine): '%s'",
+                    dream_text,
                 )
-                logger.info("[Subconscious] Dream insight successfully persisted.")
         except asyncio.CancelledError:
             logger.info("[Subconscious] Dream sequence cancelled due to user activity.")
             raise

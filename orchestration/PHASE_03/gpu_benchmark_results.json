@@ -1,0 +1,33 @@
+{
+  "BM-GPU-P3-01": {
+    "benchmark_id": "BM-GPU-P3-01",
+    "title": "End-to-End Turn Latency with Causal Affect",
+    "prompts_evaluated": 15,
+    "baseline_mean_ttft_ms": 26.92,
+    "candidate_mean_ttft_ms": 27.03,
+    "mean_ttft_delta_ms": 0.11,
+    "p50_ttft_delta_ms": 0.19,
+    "p95_ttft_delta_ms": 19.25,
+    "p99_ttft_delta_ms": 19.25,
+    "target_mean_delta_ms": "<= 10.0",
+    "target_p95_delta_ms": "<= 20.0",
+    "baseline_mean_total_ms": 383.35,
+    "candidate_mean_total_ms": 372.23,
+    "verdict": "PASS"
+  },
+  "BM-GPU-P3-02": {
+    "benchmark_id": "BM-GPU-P3-02",
+    "title": "Multi-Turn Regulation & Soak Test",
+    "turns_executed": 20,
+    "distress_turns_tested": 2,
+    "regulation_checks_passed": 2,
+    "regulation_accuracy_pct": 100.0,
+    "target_regulation_accuracy_pct": "100.0%",
+    "affect_mean_reversion_verified": true,
+    "initial_rss_kb": 137404.0,
+    "final_rss_kb": 137448.0,
+    "rss_variance_pct": 0.03,
+    "target_rss_variance_pct": "<= 5.0%",
+    "verdict": "PASS"
+  }
+}

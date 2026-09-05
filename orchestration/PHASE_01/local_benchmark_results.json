@@ -1,0 +1,38 @@
+{
+  "BM-LOC-01": {
+    "benchmark_id": "BM-LOC-01",
+    "total_commits": 5000,
+    "iterations": 5,
+    "commits_per_iteration": 1000,
+    "mean_ms": 0.0871,
+    "p50_ms": 0.0839,
+    "p95_ms": 0.1111,
+    "p99_ms": 0.1405,
+    "min_ms": 0.0685,
+    "max_ms": 0.5748,
+    "target_p50_ms": "<= 3.0",
+    "target_p95_ms": "<= 5.0",
+    "verdict": "PASS"
+  },
+  "BM-LOC-02": {
+    "benchmark_id": "BM-LOC-02",
+    "sessions_measured": 100,
+    "mean_bytes": 949.96,
+    "min_bytes": 947,
+    "max_bytes": 951,
+    "target_mean_bytes": "<= 2048",
+    "verdict": "PASS"
+  },
+  "BM-LOC-03": {
+    "benchmark_id": "BM-LOC-03",
+    "total_events": 10000,
+    "mean_us": 2.16,
+    "p50_us": 2.33,
+    "p95_us": 2.71,
+    "p99_us": 3.0,
+    "min_us": 0.75,
+    "max_us": 25.88,
+    "target_p95_us": "<= 100.0",
+    "verdict": "PASS"
+  }
+}

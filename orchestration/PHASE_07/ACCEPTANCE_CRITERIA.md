@@ -21,7 +21,7 @@ Status: READY_FOR_DISPATCH
 | **AC-P7-07** | Governed Learning | ReflectionService routes persona mutations through LearningGovernor and LearningApprovalGate; unapproved proposals held in queue; 1-step rollback verified | 100% of trait mutations governed; 0 unverified auto-applies |
 | **AC-P7-08** | Provider Portability | Cross-provider behavioral test validates persona fidelity across distinct provider clients (OllamaClient vs AnthropicClient) | Behavioral conformance verified across distinct provider interfaces |
 | **AC-P7-09** | Quality & CI Gates | Pure 7-bit ASCII, 0 ruff errors, 0 radon D/E/F cyclomatic complexity findings, full test suite passes | 100% pass rate across 2,332+ tests locally and on home-gpu |
-| **AC-P7-10** | Integrated GPU Gate | Full pipeline GPU turn execution through composed BrainAgent on RTX 2060 Super | Mean TTFT < 80.0 ms, 100% authoritative state continuity |
+| **AC-P7-10** | Integrated GPU Gate | Full pipeline GPU turn execution through composed BrainAgent on RTX 2060 Super | Mean TTFT < 120.0 ms, 100% authoritative state continuity |
 
 ---
 

@@ -1,7 +1,9 @@
 import asyncio
+import inspect
 import logging
 import re
 import time
+import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -9,6 +11,7 @@ from ..config import Config
 from ..errors import AgentError
 from ..persona.biography import BIOGRAPHY_SOURCE
 from .decision import ActionPlan
+from .external_action import ExternalActionIntent
 from .identity import _HOSTILE_TO_USER, _match_views
 from .json_extract import extract_first_json_value
 from .memory_activation import AntiInjectionGate
@@ -502,14 +505,86 @@ class ActionService:
     Enforces the Identity Protocol in LLM generations.
     """
 
-    def __init__(self, llm_service=None, memory_store=None, self_knowledge=None):
+    def __init__(
+        self,
+        llm_service=None,
+        memory_store=None,
+        self_knowledge=None,
+        external_action_dispatcher=None,
+    ):
         self.llm = llm_service
         self.memory = memory_store
         # Optional, like publish_cb. Absent, the self-grounding gate still runs
         # against surfaced memories and the user's message -- it simply has a
         # smaller vocabulary to count as grounded, and records no gaps.
         self.self_knowledge = self_knowledge
+        self.external_action_dispatcher = external_action_dispatcher
         self.publish_cb = None
+
+    @staticmethod
+    def _build_external_action_intent(plan: ActionPlan) -> ExternalActionIntent:
+        """Build the typed boundary object from an external-action plan."""
+        payload = plan.payload if isinstance(plan.payload, dict) else {}
+        nested = next(
+            (
+                payload.get(key)
+                for key in ("external_action_intent", "external_action", "action")
+                if payload.get(key) is not None
+            ),
+            None,
+        )
+        if isinstance(nested, ExternalActionIntent):
+            return nested
+
+        intent_data = dict(nested) if isinstance(nested, dict) else dict(payload)
+        intent_data.setdefault(
+            "action_id",
+            payload.get("action_id")
+            or payload.get("intent_id")
+            or f"external-{uuid.uuid4().hex}",
+        )
+        intent_data.setdefault("turn_id", payload.get("turn_id", "unknown-turn"))
+        intent_data.setdefault(
+            "tool_or_actuator",
+            payload.get("tool_or_actuator") or payload.get("tool") or "",
+        )
+        return ExternalActionIntent.model_validate(intent_data)
+
+    @staticmethod
+    def _external_action_error(dispatch_result) -> str | None:
+        """Return a terminal dispatcher error, if the result reports one."""
+        if not isinstance(dispatch_result, dict):
+            return None
+        status = str(dispatch_result.get("status", "COMPLETED")).upper()
+        if status not in {"FAILED", "CANCELLED"}:
+            return None
+        return str(dispatch_result.get("error") or "External action failed.")
+
+    async def _execute_external_action(
+        self, plan: ActionPlan
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Dispatch an external action while preserving the fail-closed boundary."""
+        if self.external_action_dispatcher is None:
+            logger.warning("[Action] External action blocked: %s", plan.goal)
+            yield {"type": "error", "data": "External action blocked."}
+            yield {"type": "done", "data": ""}
+            return
+
+        try:
+            action_intent = self._build_external_action_intent(plan)
+            dispatch_result = self.external_action_dispatcher.dispatch(action_intent)
+            if inspect.isawaitable(dispatch_result):
+                dispatch_result = await dispatch_result
+            error = self._external_action_error(dispatch_result)
+            if error is not None:
+                yield {"type": "error", "data": error}
+                yield {"type": "done", "data": ""}
+                return
+            yield {"type": "done", "data": ""}
+        except Exception as exc:
+            logger.exception("[Action] External action failed: %s", plan.goal)
+            yield {"type": "error", "data": str(exc)}
+            yield {"type": "done", "data": ""}
 
     def _check_user_memory_grounding(
         self, response: str, surfaced, user_message: str
@@ -809,6 +884,9 @@ class ActionService:
         plans, and any other plan built outside decision.py's BT, don't set
         one)."""
         lines = [f"- Goal: {plan.goal}", f"- Current Emotion: {emotion}"]
+        directive = plan.payload.get("state_directive")
+        if directive:
+            lines.append(f"- State Directive: {directive}")
         decision = plan.behavior_decision
         if decision is not None:
             intent = decision.intent
@@ -1826,7 +1904,20 @@ class ActionService:
             # Already triggered by CognitiveService
             yield {"type": "done", "data": ""}
 
+        elif plan.action_type == "WAIT":
+            async for out in self._execute_wait(plan):
+                yield out
+
+        elif plan.action_type == "EXTERNAL_ACT":
+            async for out in self._execute_external_action(plan):
+                yield out
+
         else:
             logger.warning(f"[Action] Unrecognized action: {plan.action_type}")
             yield {"type": "error", "data": "Unknown operation."}
             yield {"type": "done", "data": ""}
+
+    async def _execute_wait(self, plan: ActionPlan) -> AsyncGenerator[dict[str, Any], None]:
+        """Realize a WAIT decision as terminal silence."""
+        del plan
+        yield {"type": "done", "data": ""}

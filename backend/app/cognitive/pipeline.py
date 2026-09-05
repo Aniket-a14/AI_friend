@@ -86,6 +86,15 @@ class CognitivePipeline:
         reappraisal=None,
         session_store=None,
         scheduler: "BackgroundScheduler | None" = None,
+        workspace_store=None,
+        temporal_memory_store=None,
+        plan_verifier=None,
+        plan_executor=None,
+        episodic_simulator=None,
+        learning_governor=None,
+        offline_adapter_gate=None,
+        provider_capability_negotiator=None,
+        external_action_dispatcher=None,
     ):
         self.perception = perception
         self.appraisal = appraisal
@@ -107,6 +116,40 @@ class CognitivePipeline:
         # service on this class -- a pipeline built without one (every
         # pre-Phase-04 caller) just never calls preempt/resume.
         self.scheduler = scheduler
+        self.workspace_store = workspace_store
+        self.temporal_memory_store = temporal_memory_store
+        self.plan_verifier = plan_verifier
+        self.plan_executor = plan_executor
+        self.episodic_simulator = episodic_simulator
+        self.learning_governor = learning_governor
+        self.offline_adapter_gate = offline_adapter_gate
+        self.provider_capability_negotiator = provider_capability_negotiator
+        self.external_action_dispatcher = external_action_dispatcher
+
+    async def _persist_turn_session(
+        self,
+        raw_event: dict[str, Any],
+        event_metadata: dict[str, Any],
+        session_state: "SessionState",
+        workspace: WorkspaceSnapshotLike | None,
+    ) -> WorkspaceSnapshotLike | None:
+        """Persist session state and refresh the authoritative workspace view."""
+        workspace_session_id = getattr(workspace, "session_id", None) or raw_event.get(
+            "user_id"
+        ) or event_metadata.get("user_id")
+        await persist_session_state(
+            self.session_store,
+            session_state,
+            workspace_store=self.workspace_store,
+            workspace_session_id=workspace_session_id,
+        )
+        if self.workspace_store is not None and bool(
+            getattr(Config, "WORKSPACE_AUTHORITATIVE", False)
+        ):
+            return await self.workspace_store.get_snapshot(
+                workspace_session_id or "default"
+            )
+        return workspace
 
     def _maybe_preempt_background(self) -> None:
         """Immediately abort any in-flight background job -- a foreground
@@ -271,7 +314,7 @@ class CognitivePipeline:
             # Trigger System 2 deep appraisal in background (non-blocking).
             # A2: cancel any still-running prior appraisal so overlapping
             # tasks cannot clobber each other's writes to short-term affect.
-            if self.llm:
+            if self.llm and getattr(Config, "SYSTEM2_APPRAISAL_ENABLED", True):
                 if self._system2_task and not self._system2_task.done():
                     self._system2_task.cancel()
                 self._system2_task = asyncio.create_task(
@@ -372,9 +415,8 @@ class CognitivePipeline:
         endocrine-to-sampling mapping and prompt assembly need. Pure -- no
         yields, so it's a plain call from `execute` rather than a
         sub-generator."""
-        plan.payload["identity_prompt"] = self.identity.get_persona_prompt(
-            state_directive
-        )
+        plan.payload["identity_prompt"] = self.identity.get_persona_prompt()
+        plan.payload["state_directive"] = state_directive
         plan.payload["cortisol"] = state_snapshot.get("cortisol", 0.5)
         plan.payload["dopamine"] = state_snapshot.get("dopamine", 0.0)
         plan.payload["fatigue"] = state_snapshot.get("fatigue", 0.0)
@@ -497,6 +539,7 @@ class CognitivePipeline:
         # action_type="CLARIFY" without also setting a selected_candidate
         # of kind "ASK", which _derive_action_kind reads first below.
         "CLARIFY": "ASK",
+        "WAIT": "WAIT",
         # Phase 03 Package B: same defensive-fallback reasoning as CLARIFY/
         # ASK above -- decision.py never sets these action_types without
         # also selecting a candidate of the matching kind.
@@ -779,10 +822,14 @@ class CognitivePipeline:
             ):
                 yield chunk
             if conflict_result["stop"]:
-                await persist_session_state(self.session_store, session_state)
+                workspace = await self._persist_turn_session(
+                    raw_event, event_metadata, session_state, workspace
+                )
                 yield {"type": "pipeline_telemetry", "data": stage_times}
                 return
-            await persist_session_state(self.session_store, session_state)
+            workspace = await self._persist_turn_session(
+                raw_event, event_metadata, session_state, workspace
+            )
 
             # 3. Sequential Perception
             t_start = time.perf_counter()

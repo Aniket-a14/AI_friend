@@ -1,0 +1,45 @@
+{
+  "BM-LOC-P2-01": {
+    "benchmark_id": "BM-LOC-P2-01",
+    "title": "Bi-temporal Query Throughput",
+    "queries_executed": 1000,
+    "mean_ms": 0.6342,
+    "p50_ms": 0.626,
+    "p95_ms": 1.1393,
+    "p99_ms": 1.2535,
+    "min_ms": 0.0716,
+    "max_ms": 1.8361,
+    "target_p50_ms": "<= 1.0",
+    "target_p95_ms": "<= 2.0",
+    "verdict": "PASS"
+  },
+  "BM-LOC-P2-02": {
+    "benchmark_id": "BM-LOC-P2-02",
+    "title": "Contradiction Transition Latency",
+    "transitions_executed": 1000,
+    "mean_ms": 0.081,
+    "p50_ms": 0.0787,
+    "p95_ms": 0.0978,
+    "p99_ms": 0.1204,
+    "min_ms": 0.0602,
+    "max_ms": 0.3645,
+    "target_p50_ms": "<= 1.5",
+    "target_p95_ms": "<= 3.0",
+    "verdict": "PASS"
+  },
+  "BM-LOC-P2-03": {
+    "benchmark_id": "BM-LOC-P2-03",
+    "title": "Constraint-First Filter Latency",
+    "iterations": 10000,
+    "candidates_per_iter": 10,
+    "forbidden_claims_count": 20,
+    "mean_us": 25.08,
+    "p50_us": 24.67,
+    "p95_us": 28.04,
+    "p99_us": 33.5,
+    "min_us": 22.92,
+    "max_us": 110.96,
+    "target_p95_us": "<= 50.0",
+    "verdict": "PASS"
+  }
+}

@@ -47,18 +47,36 @@ def cognitive_service(mock_llm_service, mock_graph_db, mock_memory_store, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_service):
+async def test_scenario_hostile_interaction_drift(
+    cognitive_service, mock_llm_service, monkeypatch
+):
     """
     Scenario: User is consistently mean. The agent should drift toward guarded/reserved.
     """
-    # 1. Explicitly disable intent classification so generate() is only called for:
+    # 1. Explicitly disable intent classification and review queue so generate() is only called for:
     #   1. Reflection - Fact Extraction
     #   2. Reflection - Identity Suggestion (REQUIRED: confidence >= 0.8)
     # This avoids fragile coupling with the autouse fixture's .env interaction.
+    from app.cognitive import core, learning
     from app.config import Config
 
-    original_val = Config.LLM_INTENT_CLASSIFICATION_ENABLED
-    Config.LLM_INTENT_CLASSIFICATION_ENABLED = False
+    monkeypatch.setattr(Config, "LLM_INTENT_CLASSIFICATION_ENABLED", False)
+    # Phase 07: LEARNING_REVIEW_REQUIRED now defaults True, which routes a
+    # high-confidence persona suggestion into the governed review queue
+    # instead of applying it directly -- this scenario is specifically
+    # about the legacy direct-apply drift actually landing in
+    # identity.history, so it pins the flag back to False for its duration
+    # (mirrors test_reflection.py::test_identity_evolution_trigger).
+    monkeypatch.setattr(Config, "LEARNING_REVIEW_REQUIRED", False)
+    monkeypatch.setattr(Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(Config, "REFLECTION_ENABLED", True)
+    monkeypatch.setattr(learning.Config, "LEARNING_REVIEW_REQUIRED", False)
+    monkeypatch.setattr(learning.Config, "REFLECTION_MIN_INTERVAL_SECONDS", 0.0)
+    monkeypatch.setattr(learning.Config, "REFLECTION_ENABLED", True)
+    if hasattr(core, "Config"):
+        monkeypatch.setattr(core.Config, "LLM_INTENT_CLASSIFICATION_ENABLED", False)
+    cognitive_service.learning.last_reflection_started_at = 0.0
+
 
     async def mock_generate(prompt, **kwargs):
         if "deep appraisal" in prompt or "goal_congruence" in prompt:
@@ -95,8 +113,6 @@ async def test_scenario_hostile_interaction_drift(cognitive_service, mock_llm_se
     # Relationship (Adaptive) should have evolved
     assert cognitive_service.identity.history["relationship"] == "Strained"
 
-    # Cleanup
-    Config.LLM_INTENT_CLASSIFICATION_ENABLED = original_val
 
 
 @pytest.mark.asyncio
