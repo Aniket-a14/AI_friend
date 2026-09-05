@@ -1,6 +1,6 @@
 """Local Phase 06 micro-benchmarks (BM-LOC-P6-01, BM-LOC-P6-02, BM-LOC-P6-03, BM-LOC-P6-04).
 
-Implements local benchmarks per orchestration/PHASE_06/BENCHMARK_PLAN.md.
+Implements local benchmarks per orchestration/archive/phase_06/BENCHMARK_PLAN.md.
 """
 
 from __future__ import annotations

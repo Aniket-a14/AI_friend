@@ -512,7 +512,7 @@ def test_phase_six_files_are_strictly_seven_bit_ascii():
         repo_root / "backend/app/cognitive/planning.py",
         repo_root / "backend/app/cognitive/simulation.py",
         repo_root / "backend/tests/test_planning_simulation.py",
-        repo_root / "orchestration/PHASE_06/CODEX_RESULT.md",
+        repo_root / "orchestration/archive/phase_06/CODEX_RESULT.md",
     ]
     for path in paths:
         assert all(byte < 128 for byte in path.read_bytes()), path

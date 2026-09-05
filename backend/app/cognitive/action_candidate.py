@@ -1,17 +1,8 @@
-"""Phase 02 Package B: ActionCandidate and CandidateSelector -- explicit,
-scored action candidates with constraint-first boundary filtering, applied
-before any candidate reaches language realization (FINAL_HUMANOID_BRAIN_
-ARCHITECTURE.md Sections 8, 11, 22, 39).
+"""Scored action candidates with constraint-first filtering before realization.
 
-Constraint-first means filter_constraints always runs before scoring: a
-candidate that violates an identity boundary or safety refusal must never
-win on score alone, however useful it would otherwise score. Fix round
-(Codex review B1 - blocker): score_and_select itself now enforces this
-when called with `forbidden_claims`, rather than relying solely on every
-caller to have pre-filtered -- see that method's docstring. Package A
-(backend/app/state/memory_records.py, temporal_store.py) is a separate,
-parallel work package this module does not import from -- see
-orchestration/PHASE_02/CLAUDE_TASK.md's file ownership split.
+CandidateSelector enforces supplied identity and safety boundaries before scoring.
+Global controls may rank eligible candidates but cannot restore a rejected one.
+See FINAL_HUMANOID_BRAIN_ARCHITECTURE.md Sections 8, 11, 22 and 39.
 """
 
 from __future__ import annotations
@@ -33,7 +24,7 @@ ActionCandidateKind = Literal[
     "VERIFY",
     "REFLECT",
     "UPDATE_GOAL",
-    # Phase 03 Package B: emotion regulation actions (Architecture Sections
+    # Affect control: emotion regulation actions (Architecture Sections
     # 9, 10, 21, 38) -- selectable candidates rather than silent affect
     # overwriting. REAPPRAISE and REDIRECT_ATTENTION have generators in
     # decision.py and executors in action.py; SUPPRESS_EXPRESSION is added
@@ -51,7 +42,7 @@ ActionCandidateKind = Literal[
 # overriding a candidate's own evaluated score.
 _GOAL_ALIGNMENT_WEIGHT = 0.2
 
-# Phase 03 Package B: global-control scoring modulation (Architecture
+# Affect control: global-control scoring modulation (Architecture
 # Sections 9, 10, 21). Each is an additive nudge layered on top of a
 # candidate's own score and goal alignment -- never a replacement for
 # either -- and is only ever applied to candidates that have already
@@ -80,7 +71,7 @@ _EXPLORATION_UNCERTAINTY_WEIGHT = 0.25
 # penalty grows as the budget shrinks toward 0, via (1 - effort_budget).
 _EFFORT_COST_PENALTY_WEIGHT = 0.3
 
-# Phase 04 Package B: metacognitive-directive scoring modulation
+# Metacognition: metacognitive-directive scoring modulation
 # (FINAL_HUMANOID_BRAIN_ARCHITECTURE.md Sections 20, 21). A directive of
 # PROCEED (the default whenever no calibration engine is wired in yet)
 # applies no modulation at all, matching exact pre-Phase-04 scoring.

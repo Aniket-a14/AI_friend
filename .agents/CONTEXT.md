@@ -16779,3 +16779,61 @@ Verification:
 NOT done: Physical robotics body hardware actuation (realized via fail-closed
 external dispatcher stubs).
 
+
+## 2026-09-05 -- Codex engineering cleanup
+
+Worktree: `/private/tmp/ai-friend-codex-cleanup`, branch
+`codex/engineering-cleanup`, baseline `7a7626f`.
+
+Changes and rationale:
+
+- Renamed the two phase-based cognitive flags to MEMORY_TRUTH_ENABLED and
+  AFFECT_CONTROL_ENABLED across runtime code, tests, and benchmark callers.
+  AppSettings accepts historical environment/constructor names through
+  AliasChoices, with a single stored value and canonical-name precedence
+  within a source. Existing process-env precedence over dotenv is preserved.
+- Renamed six phase-named test modules by their tested behavior; preserved
+  their executable ASTs apart from the intended name migration. Repaired
+  three archived result paths and twelve benchmark-plan comment paths.
+- Removed twelve unused Python voice/STT/intent configuration fields,
+  their inert validation cases and template entries. The Rust voice/STT
+  environment readers do not consume them. Aligned the template filler
+  threshold with the current 1.2-second production code default.
+- Removed the unused pyautogui dependency, the local-path orchestration
+  watchdog tied to retired worktrees, and the empty legacy test package.
+- Renamed the private Rust OlaCrossfadeFilter to PcmSampleFramer; removed
+  its unused sample-rate argument and no-op prosody notification. Complete
+  samples still pass through unchanged and split samples retain their byte.
+- Corrected affected decision/speech contract and CI-tooling comments.
+  Ignore generated mypy caches. Updated direct references to the Rust type.
+
+Verification:
+
+- Full backend: 2,395 passed, 0 failures, 0 errors, 0 skipped, 63.658 seconds
+  from JUnit XML. Baseline had 2,379 cases; 20 alias regression cases were
+  added and four inert configuration-range parameter cases removed.
+- Focused batches: 290 and 70 passed. The final full suite includes both
+  the original memory-provenance suite and the renamed storage-provenance
+  suite; no test module was lost in the rename.
+- Rust: cargo test --workspace --offline passed 179 tests; cargo check
+  --workspace --offline passed. Voice-agent alone passed 78 tests.
+- Initial socket-restricted NATS tests passed after permitting loopback.
+  STT initially SIGKILLed because both local ONNX Runtime dylib copies had
+  invalid signatures. Ad-hoc re-signing those untracked build artifacts
+  allowed all workspace tests to pass; no STT source/build script changed.
+- Mutation checks: removing the legacy flag aliases failed 10 tests;
+  reversing alias precedence failed 2; corrupting a buffered PCM byte
+  failed 1 Rust test; duplicating PCM samples failed 2. Mutations restored.
+- Ruff, compileall, subject wiring, git diff --check, and Radon D/E/F passed.
+- Mypy: 21 errors in 9 files. Bandit: 2 medium-severity, low-confidence B608
+  findings in memory_store.py. Independently reproduced both on an archive
+  of baseline HEAD; normalized diagnostics are identical after cleanup.
+- Active-code searches found removed symbols absent and old flag names
+  limited to settings input aliases, their tests, and the template note.
+
+NOT done: architecture redesign, new cognitive features, provider/model
+replacement, storage/wire migrations, frontend/website changes or builds,
+clean dependency reinstall, live hardware/GPU benchmarks, merge, push, or
+final post-cleanup system audit. Gemini's uncommitted primary-worktree edits
+were inspected as guidance and were not imported or modified. Existing
+mypy/Bandit findings and historical benchmark provenance remain unchanged.

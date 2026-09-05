@@ -1,6 +1,6 @@
 """Remote GPU Benchmarks for Phase 02 on NVIDIA GeForce RTX 2060 Super.
 
-Implements BM-GPU-P2-01 and BM-GPU-P2-02 per orchestration/PHASE_02/BENCHMARK_PLAN.md.
+Implements BM-GPU-P2-01 and BM-GPU-P2-02 per orchestration/archive/phase_02/BENCHMARK_PLAN.md.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ async def run_bm_gpu_p2_01(client: OllamaClient) -> dict[str, Any]:
 
         # B. Candidate Condition (Phase 2 turn with Memory Truth active)
         print("\nMeasuring Candidate Condition (15 prompts with Memory Truth)...")
-        Config.PHASE_02_MEMORY_TRUTH = True
+        Config.MEMORY_TRUTH_ENABLED = True
 
         for i, prompt in enumerate(STANDARDIZED_PROMPTS):
             t0 = time.perf_counter()

@@ -510,7 +510,7 @@ class CognitiveService:
         leaves it `None`, and `CognitivePipeline.execute` adapts
         `self.surfaced_memories` -- the legacy memory dicts this wrapper
         already collects -- into `MemoryActivation` tokens itself whenever
-        `Config.PHASE_02_MEMORY_TRUTH` is on, so a real production turn no
+        `Config.MEMORY_TRUTH_ENABLED` is on, so a real production turn no
         longer calls `DecisionService.decide(..., memory_activations=None)`
         unconditionally the way it did before this fix.
         """

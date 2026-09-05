@@ -149,12 +149,11 @@ class ChatOutputAffect(BaseModel):
 
 
 class SpeechExpressionWire(BaseModel):
-    """Phase 3B wire mirror of `cognitive.expression.SpeechExpression`
-    (Phase 3A, Codex) -- kept distinct from that in-process type the same
-    way `StateUpdate` is distinct from `AgentState`. `extra: "allow"` so a
-    producer ahead of a consumer on this field doesn't break validation in
-    either direction. Optional on `ChatOutput` below: absent means "no
-    producer yet" (true today) or "legacy tag path", not an error.
+    """Wire mirror of the in-process cognitive SpeechExpression.
+
+    BrainAgent derives this from state for speech output. It is optional for
+    producers using the legacy inline-tag path. Extra fields allow producers
+    and consumers to upgrade independently.
     """
 
     model_config = {"extra": "allow"}

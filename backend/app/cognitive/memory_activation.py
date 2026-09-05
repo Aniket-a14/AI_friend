@@ -1,13 +1,8 @@
-"""Phase 02 Package B: structured MemoryActivation tokens and the
-AntiInjectionGate that defends the cognitive turn against indirect prompt
-injection carried inside retrieved memory content (FINAL_HUMANOID_BRAIN_
-ARCHITECTURE.md Sections 8, 11, 22, 39).
+"""Typed retrieval activations and checks against memory-borne instruction injection.
 
-MemoryActivation is the shared contract with Package A (backend/app/state/
-memory_records.py, temporal_store.py) -- see orchestration/PHASE_02/PLAN.md
-section 4.A. It is defined here, not imported from Package A's module, so
-this file carries no import dependency on that parallel work package (file
-ownership split, orchestration/PHASE_02/CLAUDE_TASK.md).
+The activation adapter projects storage records into the decision contract while
+preserving provenance, validity, contradiction and outage metadata. Retrieved
+content remains evidence rather than policy or executable instructions.
 """
 
 from __future__ import annotations
@@ -274,7 +269,7 @@ def memories_to_activations(
     `{"content": str, "source": ..., "timestamp": ..., "relevance": float}`
     -- the format retrieval has always used, predating Phase 02. This is the
     bridge Codex review finding B1 asked for: without it, a production turn
-    with `Config.PHASE_02_MEMORY_TRUTH=True` had no path from the real
+    with `Config.MEMORY_TRUTH_ENABLED=True` had no path from the real
     memory-surfacing pipeline into `DecisionService.decide`'s
     `memory_activations` parameter, so the ASK/outage branches were only
     reachable from a hand-built test argument.

@@ -382,7 +382,6 @@ Grouped by domain — see `backend/app/config.py` for the full set.
 | `SYSTEM_TICK_INTERVAL` | `60s` | Mesh heartbeat frequency. |
 | `PSYCH_ALPHA` | `0.3` | Valence drift rate toward target. |
 | `ACTR_DECAY_RATE` | `0.5` | Forgetting rate for episodic memory. |
-| `INTENT_THRESHOLD` | `0.75` | Confidence required for speculative interruption. |
 
 ## Troubleshooting
 

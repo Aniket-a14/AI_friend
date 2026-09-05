@@ -596,7 +596,7 @@ class CognitivePipeline:
 
     def _derive_action_kind(self, plan) -> ActionKind:
         """Phase 02 Package B: when CandidateSelector picked a winner
-        (`Config.PHASE_02_MEMORY_TRUTH` True), Stage 6 commits *that*
+        (`Config.MEMORY_TRUTH_ENABLED` True), Stage 6 commits *that*
         candidate's kind instead of the old action_type heuristic below --
         the whole point of generalized action selection is that the
         committed ActionIntent reflects what was actually chosen, not a
@@ -675,9 +675,9 @@ class CognitivePipeline:
         event: Any,
     ) -> list[MemoryActivation] | None:
         activations = memory_activations
-        if Config.PHASE_02_MEMORY_TRUTH and activations is None:
+        if Config.MEMORY_TRUTH_ENABLED and activations is None:
             activations = memories_to_activations(surfaced_memories)
-        if Config.PHASE_02_MEMORY_TRUTH and activations:
+        if Config.MEMORY_TRUTH_ENABLED and activations:
             event.metadata["retrieval_degraded"] = any(
                 activation.outage_flag for activation in activations
             )
@@ -689,9 +689,9 @@ class CognitivePipeline:
         state_snapshot: dict[str, Any],
     ) -> dict[str, Any]:
         decide_kwargs: dict[str, Any] = {}
-        if Config.PHASE_02_MEMORY_TRUTH and self._decision_accepts_memory_activations():
+        if Config.MEMORY_TRUTH_ENABLED and self._decision_accepts_memory_activations():
             decide_kwargs["memory_activations"] = memory_activations
-        if Config.PHASE_03_AFFECT_CONTROL and self._decision_accepts_global_controls():
+        if Config.AFFECT_CONTROL_ENABLED and self._decision_accepts_global_controls():
             decide_kwargs["global_controls"] = state_snapshot.get("global_controls")
         return decide_kwargs
 
@@ -756,7 +756,7 @@ class CognitivePipeline:
         fallback tuple rather than skipping the causal trace entirely.
 
         `memory_activations` (Phase 02 Package B, Sections 8/11/22/39) is
-        likewise optional and additive. When `Config.PHASE_02_MEMORY_TRUTH`
+        likewise optional and additive. When `Config.MEMORY_TRUTH_ENABLED`
         is False (the default) it is accepted but not acted on, preserving
         exact Phase 1 behavior for every existing caller. When True and any
         activation carries `outage_flag=True`, this marks the turn's
@@ -766,7 +766,7 @@ class CognitivePipeline:
         memory can shift which `ActionCandidate` Stage 6 commits.
 
         Phase 03 Package B (Sections 9, 10, 21, 38): when
-        `Config.PHASE_03_AFFECT_CONTROL` is True, this also reads a
+        `Config.AFFECT_CONTROL_ENABLED` is True, this also reads a
         `global_controls` value off `state_snapshot` (key "global_controls",
         left `None` until Package A's global_controls.py populates it) and
         threads it into `DecisionService.decide` so global controls can

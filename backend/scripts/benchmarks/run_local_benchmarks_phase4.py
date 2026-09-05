@@ -1,6 +1,6 @@
 """Local Phase 04 micro-benchmarks (BM-LOC-P4-01, BM-LOC-P4-02, BM-LOC-P4-03).
 
-Implements local benchmarks per orchestration/PHASE_04/BENCHMARK_PLAN.md.
+Implements local benchmarks per orchestration/archive/phase_04/BENCHMARK_PLAN.md.
 """
 
 from __future__ import annotations

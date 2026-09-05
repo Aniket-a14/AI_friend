@@ -110,7 +110,7 @@ All parameters are rounded to exactly **two decimal places** ($0.01$ precision) 
 
 **Corrected 2026-09-01** — this section previously described a 10ms linear Overlap-Add crossfade applied at every prosody shift between consecutive chunks. That mechanism was removed entirely (Bucket 2, see `.agents/CONTEXT.md`'s 2026-09-01 entries): it blended the last 15ms of the *already-published, already-playing* previous chunk into the head of the next, which is not overlap-add — true OLA blends two buffers analyzed together **before** either is sent downstream. Because the "previous" side here had already gone out over `audio.stream` and reached the listener, those 15ms were heard twice, at a phase discontinuity — reported live as a hazy, not-crystal-clear artifact, and it fired on almost any prosody inequality between chunks arriving tens of milliseconds apart (which, at the time, was most chunk boundaries — see §8's chunking notes below). A clean butt-join was judged strictly better than replaying already-heard audio, so the crossfade was deleted rather than corrected in place; correctly implementing true OLA would need holding back every chunk's tail until the next chunk arrives, adding a full chunk of latency to an already latency-critical path.
 
-What remains at this seam (`OlaCrossfadeFilter` in `backend/crates/voice-agent/src/main.rs`, name kept only for continuity) is exactly the part of the old type that was never about prosody:
+What remains at this seam (`PcmSampleFramer` in `backend/crates/voice-agent/src/main.rs`) is exactly the part of the old type that was never about prosody:
 
 ### 3.1 Odd-Byte PCM Buffering
 

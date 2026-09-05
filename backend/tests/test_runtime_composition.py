@@ -177,7 +177,7 @@ async def test_wait_candidate_maps_to_silent_action(monkeypatch):
         "memory_activations": [],
     }
 
-    monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", True)
+    monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", True)
     await decision._plan_social_response(blackboard)
 
     assert blackboard["plan"].action_type == "WAIT"

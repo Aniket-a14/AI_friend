@@ -1,6 +1,6 @@
 """Remote GPU Benchmarks for Phase 07 on NVIDIA GeForce RTX 2060 Super.
 
-Implements BM-GPU-P7-01 and BM-GPU-P7-02 per orchestration/PHASE_07/BENCHMARK_PLAN.md.
+Implements BM-GPU-P7-01 and BM-GPU-P7-02 per orchestration/archive/phase_07/BENCHMARK_PLAN.md.
 Strictly 7-bit ASCII.
 """
 
@@ -209,13 +209,13 @@ async def run_bm_gpu_p7_01(
     """BM-GPU-P7-01: Composed Production Turn TTFT with Active Candidate Selection.
 
     Measures end-to-end cognitive turn latency through the fully composed CognitiveService
-    with active candidate selection (Config.PHASE_02_MEMORY_TRUTH=True and
-    Config.PHASE_03_AFFECT_CONTROL=True) and verifies 100% Authoritative State Continuity.
+    with active candidate selection (Config.MEMORY_TRUTH_ENABLED=True and
+    Config.AFFECT_CONTROL_ENABLED=True) and verifies 100% Authoritative State Continuity.
     Target: Mean TTFT < 120.0 ms, p95 TTFT < 200.0 ms, State Continuity 100% INTACT.
     """
     print(f"\n--- Running BM-GPU-P7-01: Composed Turn TTFT ({model_tag}) ---")
-    Config.PHASE_02_MEMORY_TRUTH = True
-    Config.PHASE_03_AFFECT_CONTROL = True
+    Config.MEMORY_TRUTH_ENABLED = True
+    Config.AFFECT_CONTROL_ENABLED = True
     Config.WORKSPACE_AUTHORITATIVE = True
     Config.INTENT_CLASSIFIER_BACKEND = "heuristic"
     Config.LLM_INTENT_CLASSIFICATION_ENABLED = False

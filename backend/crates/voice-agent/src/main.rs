@@ -222,7 +222,7 @@ impl ReverbFilter {
         self.index = 0;
         // Reviewer finding: a trailing odd byte held from the previous
         // utterance's PCM must not combine with the next utterance's first
-        // byte -- the sibling OlaCrossfadeFilter's own clear_history()
+        // byte -- the sibling PcmSampleFramer's own clear_history()
         // already clears this same kind of state for the same reason.
         self.pending_byte = None;
     }
@@ -246,39 +246,20 @@ fn reverb_wet_gain_for_distance(distance: f64) -> f32 {
     }
 }
 
-/// Bucket 2 (VOICE_REMEDIATION_PLAN.md): this used to also crossfade across prosody
-/// shifts, blending the last 15ms of the *already-published, already-playing* previous
-/// chunk into the first 15ms of the new one. That is not overlap-add -- true OLA
-/// overlaps analysis windows with complementary fades summing to unity, computed
-/// *before* either side is sent downstream. Here the "previous" side had already gone
-/// out over audio.stream and reached the listener, so blending it into the new chunk's
-/// head meant those 15ms were heard twice, at a phase discontinuity -- reported live as
-/// hazy/not crystal clear, and it fired often (on almost any prosody inequality between
-/// chunks arriving tens of ms apart).
-///
-/// True OLA would fix this correctly but needs holding back each chunk's tail until the
-/// next chunk arrives to blend with it -- one extra chunk of latency on every single
-/// emission, in a system already latency-critical enough to be its own bottleneck
-/// (Bucket 7/8). The plan's own call: a clean butt-join is strictly better than
-/// replaying emitted audio, so the crossfade is removed rather than reimplemented.
-/// What's left of this type is exactly what it was always doing correctly: buffering a
-/// dangling odd byte across chunk boundaries so 16-bit samples never get split, which
-/// has nothing to do with prosody.
-struct OlaCrossfadeFilter {
+/// Preserves 16-bit PCM sample boundaries across streamed byte chunks.
+/// Holds at most one trailing byte; completed samples pass through unchanged.
+/// Reset on interruption so the next utterance cannot inherit a partial sample.
+struct PcmSampleFramer {
     pending_byte: Option<u8>,
 }
 
-impl OlaCrossfadeFilter {
-    fn new(_sample_rate: u32) -> Self {
+impl PcmSampleFramer {
+    fn new() -> Self {
         Self { pending_byte: None }
     }
 
     fn clear_history(&mut self) {
         self.pending_byte = None;
-    }
-
-    fn notify_new_prosody(&mut self, _prosody: contracts::Prosody) {
-        // No-op: prosody-shift tracking existed only to trigger the crossfade above.
     }
 
     fn process(&mut self, bytes: &[u8]) -> Vec<u8> {
@@ -811,10 +792,10 @@ async fn main() -> Result<()> {
 
     info!("rust voice-agent subscribed to {}", topics::CHAT_OUTPUT);
 
-    let mut ola_filter = OlaCrossfadeFilter::new(config.sample_rate);
+    let mut pcm_framer = PcmSampleFramer::new();
     // P4-9: both used to be constructed fresh inside `handle_chat_output`,
     // i.e. once per chat.output chunk rather than once per stream -- unlike
-    // `ola_filter` above, which already gets this right. `ReverbFilter`
+    // `pcm_framer` above, which already gets this right. `ReverbFilter`
     // carries a real delay-line buffer; resetting it every chunk drops the
     // previous chunk's echo tail at every boundary. `current_attenuation_val`
     // is the smoothed *current* value ducking/restoring ramps toward the
@@ -870,7 +851,7 @@ async fn main() -> Result<()> {
                     &jetstream,
                     event,
                     last_distance.clone(),
-                    &mut ola_filter,
+                    &mut pcm_framer,
                     &mut reverb_filter,
                     &mut current_attenuation_val,
                     abort_flag.clone(),
@@ -1132,7 +1113,7 @@ async fn handle_chat_output(
     jetstream: &async_nats::jetstream::Context,
     event: ChatOutput,
     last_distance: std::sync::Arc<std::sync::Mutex<f64>>,
-    ola_filter: &mut OlaCrossfadeFilter,
+    pcm_framer: &mut PcmSampleFramer,
     reverb_filter: &mut ReverbFilter,
     current_attenuation_val: &mut f64,
     abort_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -1163,7 +1144,6 @@ async fn handle_chat_output(
     } else {
         vad_to_prosody(event.affect.as_ref())
     });
-    ola_filter.notify_new_prosody(prosody);
 
     // Computed once per event, like prosody above: the delivery register does
     // not change mid-utterance, only which reference clip carries it. `bucket`
@@ -1194,7 +1174,7 @@ async fn handle_chat_output(
         }
         match part {
             TemporalPart::Silence(ms) => {
-                ola_filter.clear_history();
+                pcm_framer.clear_history();
                 let pcm = contracts::silence_pcm(ms, config.sample_rate);
                 if let Ok(guard) = attenuation_factor.lock() {
                     *current_attenuation_val = *guard;
@@ -1207,7 +1187,7 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event, noise_scale).await?;
             }
             TemporalPart::Vocalization(name) => {
-                ola_filter.clear_history();
+                pcm_framer.clear_history();
                 let mut pcm = load_vocalization_pcm(&name, config.sample_rate);
                 pcm = reverb_filter.process(&pcm, reverb_wet_gain_for_distance(distance));
 
@@ -1219,7 +1199,7 @@ async fn handle_chat_output(
                 publish_pcm(jetstream, pcm, &event, gain).await?;
             }
             TemporalPart::Hesitation(ms) => {
-                ola_filter.clear_history();
+                pcm_framer.clear_history();
                 let mut pcm = hesitation_pcm(
                     config,
                     http,
@@ -1294,7 +1274,7 @@ async fn handle_chat_output(
                     // a synthetic buzz, if `voice_engine_unavailable.wav` has
                     // not been recorded yet — safe before the cloned voice
                     // exists, better once it does.
-                    ola_filter.clear_history();
+                    pcm_framer.clear_history();
                     let mut pcm =
                         load_vocalization_pcm("voice_engine_unavailable", config.sample_rate);
                     pcm = reverb_filter.process(&pcm, reverb_wet_gain_for_distance(distance));
@@ -1331,7 +1311,7 @@ async fn handle_chat_output(
 
                         pcm_bytes =
                             reverb_filter.process(&pcm_bytes, reverb_wet_gain_for_distance(distance));
-                        pcm_bytes = ola_filter.process(&pcm_bytes);
+                        pcm_bytes = pcm_framer.process(&pcm_bytes);
 
                         let target_att = if let Ok(guard) = attenuation_factor.lock() { *guard } else { 1.0 };
                         apply_attenuation(&mut pcm_bytes, current_attenuation_val, target_att);
@@ -1355,15 +1335,10 @@ enum TemporalPart {
     Hesitation(u32),
 }
 
-/// Phase 3C (§18 Experiment 4): `expression`'s continuous `breath`/
-/// `hesitation` values replace `split_temporal_parts`'s inline-tag regex as
-/// the source of temporal structure once a producer populates them -- a
-/// presence check on `ChatOutput.expression`, since this side can't read
-/// Python's `Config.SPEECH_EXPRESSION_LEGACY_TAGS` flag directly. `content`
-/// itself is treated as one plain-text part, not re-scanned for
-/// `<pause=Nms>`/`<hesitate>`/`<breath_fast>` tags: the structured channel
-/// already carries what those tags encoded, so a literal tag surviving in
-/// `content` alongside a populated `expression` would otherwise double-apply.
+/// Structured expression supplies temporal delivery when present on ChatOutput.
+/// Content remains one plain-text part: parsing inline delivery tags as well
+/// would double-apply pauses and vocalizations already encoded by expression.
+/// Messages without expression retain the legacy inline-tag parser.
 ///
 /// Thresholds mirror the legacy tags' all-or-nothing behavior at a
 /// continuous value -- `<hesitate>` was a fixed 350ms pause and
@@ -2196,7 +2171,7 @@ mod tests {
         // Reviewer finding: reset() cleared the delay buffer and index but
         // left `pending_byte` untouched. A trailing odd byte held over from
         // one utterance's PCM would then splice onto the very first byte of
-        // the NEXT, unrelated utterance -- the sibling OlaCrossfadeFilter's
+        // the NEXT, unrelated utterance -- the sibling PcmSampleFramer's
         // clear_history() already gets this right for the same kind of state.
         let mut filter = ReverbFilter::new(4, 0.5);
 
@@ -2276,21 +2251,9 @@ mod tests {
     }
 
     #[test]
-    fn ola_crossfade_filter_passes_samples_through_unmodified_across_a_prosody_shift() {
-        // Bucket 2 (VOICE_REMEDIATION_PLAN.md): rewritten for the removed crossfade.
-        // The old version of this test asserted the bug -- that a prosody shift
-        // blended the previous chunk's already-published tail into the new chunk's
-        // head. The fix is a clean butt-join: a prosody shift must change nothing
-        // about how samples are passed through, on either side of the shift.
-        let mut filter = OlaCrossfadeFilter::new(32_000);
-
-        let p1 = contracts::Prosody {
-            rate: 1.0,
-            pitch: 1.0,
-            volume: 1.0,
-            pause_bias: 0.5,
-        };
-        filter.notify_new_prosody(p1);
+    fn pcm_sample_framer_does_not_blend_consecutive_chunks() {
+        // Already emitted audio must never be replayed into the next chunk.
+        let mut filter = PcmSampleFramer::new();
 
         let chunk1_bytes: Vec<u8> = vec![100_i16; 600]
             .into_iter()
@@ -2298,15 +2261,6 @@ mod tests {
             .collect();
         let out1 = filter.process(&chunk1_bytes);
         assert_eq!(out1, chunk1_bytes);
-
-        // Shift prosody -- under the fix this changes nothing observable.
-        let p2 = contracts::Prosody {
-            rate: 1.2,
-            pitch: 1.1,
-            volume: 0.8,
-            pause_bias: 0.4,
-        };
-        filter.notify_new_prosody(p2);
 
         let chunk2_bytes: Vec<u8> = vec![200_i16; 600]
             .into_iter()
@@ -2325,11 +2279,11 @@ mod tests {
     }
 
     #[test]
-    fn ola_crossfade_filter_still_buffers_a_dangling_odd_byte() {
+    fn pcm_sample_framer_preserves_a_split_sample() {
         // The one thing this type still legitimately does: an odd trailing byte from
         // one chunk must combine with the next chunk's first byte into a whole 16-bit
         // sample, not get silently dropped or misaligned.
-        let mut filter = OlaCrossfadeFilter::new(32_000);
+        let mut filter = PcmSampleFramer::new();
 
         let first = filter.process(&[0x10]);
         assert!(first.is_empty());

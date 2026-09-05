@@ -811,7 +811,7 @@ class ActionService:
         def _rendered_content(memory: dict) -> str:
             """Fix round (Codex review B4): every piece of surfaced-memory
             text renders through the injection gate before it reaches the
-            prompt, when Config.PHASE_02_MEMORY_TRUTH is on -- previously
+            prompt, when Config.MEMORY_TRUTH_ENABLED is on -- previously
             AntiInjectionGate.sanitize_memory_text existed with no caller
             anywhere in the codebase, so it had no effect on the live
             attack surface regardless of the flag. Gated the same way as
@@ -819,7 +819,7 @@ class ActionService:
             Phase 1 rendering.
             """
             content = memory.get("content", "")
-            if Config.PHASE_02_MEMORY_TRUTH:
+            if Config.MEMORY_TRUTH_ENABLED:
                 content = _ANTI_INJECTION_GATE.sanitize_memory_text(content)
             return content
 

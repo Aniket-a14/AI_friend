@@ -1,6 +1,6 @@
 """Remote GPU Benchmarks for Phase 03 on NVIDIA GeForce RTX 2060 Super.
 
-Implements BM-GPU-P3-01 and BM-GPU-P3-02 per orchestration/PHASE_03/BENCHMARK_PLAN.md.
+Implements BM-GPU-P3-01 and BM-GPU-P3-02 per orchestration/archive/phase_03/BENCHMARK_PLAN.md.
 """
 
 from __future__ import annotations
@@ -153,8 +153,8 @@ async def run_bm_gpu_p3_01(client: OllamaClient) -> dict[str, Any]:
             pass
 
         print("Measuring Candidate Condition (15 prompts with Causal Affect & Controls)...")
-        Config.PHASE_02_MEMORY_TRUTH = True
-        Config.PHASE_03_AFFECT_CONTROL = True
+        Config.MEMORY_TRUTH_ENABLED = True
+        Config.AFFECT_CONTROL_ENABLED = True
 
         current_pad = {"pleasure": 0.1, "arousal": 0.5, "dominance": 0.0}
 

@@ -1,19 +1,9 @@
-"""CommunicativeIntent / BehaviorDecision (Phase 1B, §15 item 4): what stage
-6 (the Behavior Tree) decides to say, separated from how stage 8
-(realization) says it.
+"""Typed communicative intent and claim boundaries shared by decision and realization.
 
-Today's `ActionPlan.payload` is `dict[str, Any]` -- assembled once by
-`decision.py` and consumed once by `action.py`, with the connection between
-"why this goal" and "what the model may/may not claim" implicit in whichever
-prompt lines `_execute_respond_chat` happens to build. `BehaviorDecision`
-makes that connection an explicit, typed object instead: one place that says
-what the turn is for, how urgent it is, and what's off-limits, so
-`persona/policy.py` can validate it before generation and `action.py` can
-render it as one consolidated block instead of several independently
-assembled ones.
-
-In-process only, not a NATS `Topics` member -- promoting a type to the wire
-is Phase 3's job for `SpeechExpression`, once validated here first.
+DecisionService assembles BehaviorDecision inside ActionPlan.payload. Persona
+policy validates its boundaries before ActionService renders it for generation.
+These are in-process contracts; the speech expression wire is defined separately
+in app.contracts.
 """
 
 from __future__ import annotations
@@ -65,11 +55,9 @@ class BehaviorDecision(BaseModel):
     plus the claim boundaries `persona/policy.py` enforces before
     generation.
 
-    Phase 02 Package B additions: `selected_candidate` and
-    `rejected_alternatives` record the `CandidateSelector` outcome
-    (`action_candidate.py`) when `Config.PHASE_02_MEMORY_TRUTH` is enabled --
-    empty/None otherwise, so `.model_dump()` for a legacy caller is
-    unchanged in every value that existed before this field was added.
+    `selected_candidate` and `rejected_alternatives` record the selector
+    outcome when memory truth or affect control enables candidate selection.
+    They remain None/empty when candidate selection is disabled.
     `retrieval_degraded` mirrors an `outage_flag` seen on any
     `MemoryActivation` considered for this turn (`memory_activation.py`).
     """

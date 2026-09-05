@@ -53,11 +53,7 @@ def test_zero_decay_rate_is_allowed():
     [
         "SYSTEM_TICK_INTERVAL",
         "TOKEN_RATE_LIMIT_MAX_REQUESTS",
-        "MAX_VOICE_QUEUE_SIZE",
-        "VOICE_SYNTH_CONCURRENCY",
         "TRANSPORT_AUDIO_QUEUE_SIZE",
-        "STT_WHISPER_QUEUE_SIZE",
-        "STT_PERCEPTION_QUEUE_SIZE",
     ],
 )
 def test_zero_or_negative_rejected_for_positive_int_fields(field):

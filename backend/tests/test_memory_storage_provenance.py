@@ -21,7 +21,7 @@ async def _memory_store(graph_result=None):
 
 
 @pytest.mark.asyncio
-async def test_sqlite_schema_contains_phase2_provenance_columns():
+async def test_sqlite_schema_contains_memory_provenance_columns():
     conversation, memory = await _memory_store()
     try:
         async with conversation.pool.acquire() as conn:

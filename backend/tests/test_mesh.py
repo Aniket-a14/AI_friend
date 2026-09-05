@@ -59,7 +59,6 @@ class TestConfiguration:
         """Verify default configuration values."""
         assert Config.NATS_URL is not None
         assert Config.SAMPLE_RATE == 32000
-        assert Config.STT_MODEL_SIZE in ["tiny", "base", "small", "medium", "large"]
 
     def test_config_environment_override(self, monkeypatch):
         """Verify environment variables override defaults."""

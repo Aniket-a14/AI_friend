@@ -29,6 +29,7 @@ coverage.xml
 .benchmarks.json
 .benchmarks/
 .pytest_cache/
+.mypy_cache/
 .ruff_cache/
 htmlcov/
 benchmark_report.html

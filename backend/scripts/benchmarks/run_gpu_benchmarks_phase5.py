@@ -1,6 +1,6 @@
 """Remote GPU Benchmarks for Phase 05 on NVIDIA GeForce RTX 2060 Super.
 
-Implements BM-GPU-P5-01 and BM-GPU-P5-02 per orchestration/PHASE_05/BENCHMARK_PLAN.md.
+Implements BM-GPU-P5-01 and BM-GPU-P5-02 per orchestration/archive/phase_05/BENCHMARK_PLAN.md.
 """
 
 from __future__ import annotations

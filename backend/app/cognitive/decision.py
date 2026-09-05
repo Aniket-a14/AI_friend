@@ -268,7 +268,7 @@ class DecisionService:
         self.agent_name = agent_name
         self._weights_store = weights_store or AdaptiveWeightsStore()
         # Phase 02 Package B: constraint-first candidate filtering/scoring,
-        # only exercised when Config.PHASE_02_MEMORY_TRUTH is True.
+        # used when memory truth or affect control is enabled.
         self._candidate_selector = CandidateSelector()
 
         # Intent Persistence (Section 3.2)
@@ -385,20 +385,20 @@ class DecisionService:
 
         `memory_activations` (Phase 02 Package B) is optional and additive:
         every caller that predates it keeps working unchanged, and its
-        contents only influence the plan when Config.PHASE_02_MEMORY_TRUTH
+        contents only influence the plan when Config.MEMORY_TRUTH_ENABLED
         is True (see `_plan_social_response`).
 
         `global_controls` (Phase 03 Package B, Architecture Sections 9, 10,
         21) is likewise optional and additive: it only reaches
-        `CandidateSelector.score_and_select` when Config.PHASE_03_AFFECT_
-        CONTROL is True (see `_select_action_candidate`), and `state_
-        snapshot` (already a required parameter here) doubles as the
+        `CandidateSelector.score_and_select` when Config.AFFECT_CONTROL_ENABLED
+        is True (see `_select_action_candidate`), and `state_snapshot`
+        (already a required parameter here) doubles as the
         acute-distress signal for regulation-candidate generation.
 
         `metacognitive_directive` and `privacy_filter` (Phase 04 Package B)
         reach `CandidateSelector.score_and_select` unconditionally, gated
-        only by the same PHASE_02/PHASE_03 flag check that already governs
-        whether candidate selection runs at all -- their defaults
+        only by the memory-truth/affect-control flags that govern candidate
+        selection -- their defaults
         ("PROCEED", None) reproduce exact prior scoring for every caller
         that omits them.
         """
@@ -818,18 +818,9 @@ class DecisionService:
         action_type = "RESPOND_CHAT"
         clarification_subject: str | None = None
 
-        # Fix round (Codex review M6 - medium): candidate selection used to
-        # be nested only under Config.PHASE_02_MEMORY_TRUTH, which made
-        # Config.PHASE_03_AFFECT_CONTROL operationally inert on its own --
-        # an operator who set only the Phase 03 flag (as its own config
-        # comment invites) got no modulation and no regulation candidates
-        # at all. Phase 03 depends on the candidate-selection machinery
-        # Phase 02 introduced, but that dependency must not be a second,
-        # undocumented flag gate: either flag alone now reaches this
-        # branch. `memory_activations` defaults to `[]` when Phase 02 is
-        # off (blackboard already normalizes it to `[]`, never `None`, so
-        # this is the exact legacy value Phase 02-off callers always saw).
-        if Config.PHASE_02_MEMORY_TRUTH or Config.PHASE_03_AFFECT_CONTROL:
+        # Either feature independently enables candidate selection. Memory
+        # activations remain empty when memory truth is disabled.
+        if Config.MEMORY_TRUTH_ENABLED or Config.AFFECT_CONTROL_ENABLED:
             memory_activations = blackboard.get("memory_activations") or []
             behavior_decision = self._select_action_candidate(
                 behavior_decision,
@@ -949,7 +940,7 @@ class DecisionService:
         Phase 03 Package B: `state_snapshot` is optional and additive --
         `None` (every pre-Phase-03 caller) skips distress detection
         entirely, matching exact prior behavior. When supplied and
-        `Config.PHASE_03_AFFECT_CONTROL` is True, acute distress
+        `Config.AFFECT_CONTROL_ENABLED` is True, acute distress
         (`_is_acute_distress`) adds `_build_regulation_candidates`'s output
         to the set below.
         """
@@ -996,7 +987,7 @@ class DecisionService:
             )
 
         if (
-            Config.PHASE_03_AFFECT_CONTROL
+            Config.AFFECT_CONTROL_ENABLED
             and state_snapshot is not None
             and _is_acute_distress(state_snapshot)
         ):
@@ -1024,9 +1015,9 @@ class DecisionService:
 
         Phase 03 Package B: `state_snapshot` feeds acute-distress detection
         in `_build_candidates`; `global_controls` is forwarded to
-        `score_and_select` only when `Config.PHASE_03_AFFECT_CONTROL` is
+        `score_and_select` only when `Config.AFFECT_CONTROL_ENABLED` is
         True, so global-control modulation can never affect ranking while
-        the flag is off, matching this repo's existing PHASE_02_MEMORY_TRUTH
+        the flag is off, matching this repo's existing MEMORY_TRUTH_ENABLED
         gating pattern. Both are optional and additive -- omitting them
         reproduces exact prior behavior.
 
@@ -1075,7 +1066,7 @@ class DecisionService:
             survivors,
             active_goals=[goal],
             global_controls=(
-                global_controls if Config.PHASE_03_AFFECT_CONTROL else None
+                global_controls if Config.AFFECT_CONTROL_ENABLED else None
             ),
             forbidden_claims=forbidden_claims,
             metacognitive_directive=metacognitive_directive,

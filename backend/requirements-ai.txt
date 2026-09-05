@@ -9,12 +9,11 @@
 # to the Rust agents; these three had zero imports left anywhere in `app/`
 # (confirmed by grep across the whole backend/ tree, not assumed), and
 # faster-whisper was the only reason `torch` was ever pulled in transitively
-# -- vision's own remaining deps (mss, opencv-python, pillow, pyautogui) need
+# -- vision's own remaining deps (mss, opencv-python, pillow) need
 # no torch, so that dependency is gone too, not just hidden.
 mss>=10.2.0,<11.0.0
 opencv-python>=5.0.0.93,<6.0.0.0
 pillow>=12.3.0,<13.0.0
-pyautogui>=0.9.54,<1.0.0
 # Bucket 13 (voice remediation Phase 3): Face Landmarker for the CPU-only
 # facial reflex channel (app/vision/reflex.py). Pinned below 1.0 deliberately,
 # not just floored: mediapipe==1.0.1 crashes outright on this task on macOS

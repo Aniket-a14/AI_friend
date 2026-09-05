@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from dotenv import dotenv_values
 from pydantic import (
+    AliasChoices,
     Field,
     PrivateAttr,
     computed_field,
@@ -222,24 +223,19 @@ class AppSettings(BaseSettings):
     # Phase 1 experiment: ask the realization model for a bounded envelope.
     # False preserves the existing streaming text contract.
     LLM_TYPED_REALIZATION_ENABLED: bool = False
-    # Phase 02 Package B: gates ActionCandidate generation / CandidateSelector
-    # wiring in decision.py and pipeline.py. Flipped True in Phase 07 --
-    # Package A's temporal memory store (backend/app/state/temporal_store.py)
-    # is wired in and candidate-driven action selection has been verified
-    # end to end. Callers that must reproduce exact pre-Phase-02 behavior
-    # (backward-compatibility tests) now monkeypatch this back to False
-    # explicitly rather than relying on the default.
-    PHASE_02_MEMORY_TRUTH: bool = True
+    # Candidate selection and temporal memory grounding. Historical environment
+    # names remain accepted at the settings boundary; runtime code uses one field.
+    MEMORY_TRUTH_ENABLED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("MEMORY_TRUTH_ENABLED", "PHASE_02_MEMORY_TRUTH"),
+    )
 
-    # Phase 03 Package B: gates global-control scoring modulation and
-    # emotion-regulation candidate generation (REAPPRAISE,
-    # REDIRECT_ATTENTION) in decision.py, pipeline.py and action.py. Flipped
-    # True in Phase 07 -- Package A's global_controls.py and appraisal.py
-    # are wired in and end-to-end regulation selection has been verified.
-    # Callers that must reproduce exact pre-Phase-03 behavior now
-    # monkeypatch this back to False explicitly rather than relying on the
-    # default.
-    PHASE_03_AFFECT_CONTROL: bool = True
+    # Global-control scoring and emotion-regulation candidates. Canonical names
+    # win when both spellings occur within the same settings source.
+    AFFECT_CONTROL_ENABLED: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("AFFECT_CONTROL_ENABLED", "PHASE_03_AFFECT_CONTROL"),
+    )
 
     # Phase 07: production turns supply an authoritative workspace instance
     # to ActionIntent rather than falling back to (0, 0) -- see
@@ -400,16 +396,6 @@ class AppSettings(BaseSettings):
 
     CUSTOM_GPT_PATH: str = "GPT_weights/ai_friend_voice.ckpt"
     CUSTOM_SOVITS_PATH: str = "SoVITS_weights/ai_friend_voice.pth"
-    VOICE_WEIGHT_LOAD_RETRIES: int = 3
-    VOICE_FILLER_HYDRATE_ON_STARTUP: bool = True
-    VOICE_TTS_MOCK: bool = False
-    # Phase 3B (§18 Experiment 4): ships True -- `_prepended_affect_tag`/
-    # `_emit_validated`'s inline `<pause=Nms>`/`<hesitate>`/`<breath_fast>`
-    # tag injection keeps running exactly as today. `ChatOutput.expression`
-    # is additive (Optional, defaults to None) alongside the tags, not a
-    # replacement yet; flipping this to False to stop emitting inline tags
-    # is a future step, once the structured channel is trusted, not this one.
-    SPEECH_EXPRESSION_LEGACY_TAGS: bool = True
 
     # Vision / VLM Configuration
     VLM_MODEL: str = "moondream"
@@ -522,15 +508,10 @@ class AppSettings(BaseSettings):
     # own "1-3 min timescale" for this channel.
     ADRENALINE_PHASIC_HALFLIFE_S: float = 120.0
 
-    STT_MODEL_SIZE: str = "base"
-    STT_DEVICE: str = "cpu"
-
     SAMPLE_RATE: int = 32000
     BINARY_SUBJECTS: list[str] = ["audio.inbound", "audio.stream"]
     SYSTEM_TICK_INTERVAL: int = 60
     FEEDBACK_ALPHA: float = 0.70
-    MAX_VOICE_QUEUE_SIZE: int = 10
-    VOICE_SYNTH_CONCURRENCY: int = 1
     TRANSPORT_AUDIO_QUEUE_SIZE: int = 256
     VOICE_FILLER_MIN_INTERVAL_SECONDS: float = 1.5
     VOICE_FILLER_MAX_PLAYBACK_BACKLOG: int = 4
@@ -556,12 +537,6 @@ class AppSettings(BaseSettings):
     # _on_chat_input for the barge-in grace period this gates.
     BARGE_IN_ONSET_GRACE_S: float = 0.15
 
-    INTENT_THRESHOLD: float = 0.75
-    INTENT_STABILITY: int = 3
-    # Reduced to 4 for smoother macOS/CPU performance during high-throughput research
-    STT_WHISPER_QUEUE_SIZE: int = 4
-    STT_PERCEPTION_QUEUE_SIZE: int = 4
-
     GRAPH_CACHE_TTL: int = 300
     MIN_PERCEPTION_CONFIDENCE: float = 0.55
     STATE_SENSORY_WEIGHT: float = 0.20
@@ -586,11 +561,7 @@ class AppSettings(BaseSettings):
     _POSITIVE_INT_FIELDS = (
         "SYSTEM_TICK_INTERVAL",
         "TOKEN_RATE_LIMIT_MAX_REQUESTS",
-        "MAX_VOICE_QUEUE_SIZE",
-        "VOICE_SYNTH_CONCURRENCY",
         "TRANSPORT_AUDIO_QUEUE_SIZE",
-        "STT_WHISPER_QUEUE_SIZE",
-        "STT_PERCEPTION_QUEUE_SIZE",
     )
 
     @model_validator(mode="after")

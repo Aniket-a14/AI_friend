@@ -10,7 +10,7 @@ Covers, per orchestration/PHASE_03/CLAUDE_TASK.md section 2D:
      (TestRegulationActionExecution)
   4. Architecture invariants -- constraint-first cannot be overridden by
      global controls, global controls cannot bypass identity boundaries,
-     and PHASE_03_AFFECT_CONTROL off preserves legacy behavior
+     and AFFECT_CONTROL_ENABLED off preserves legacy behavior
      (TestArchitectureInvariants)
   5. Pure 7-bit ASCII across every file this package owns (TestPureAscii)
 
@@ -24,7 +24,7 @@ FIX_PLAN.md) adds, per reciprocal Codex review finding:
      fallback line, never yielded (TestRegulationOutputSafety)
   H3 [HIGH]: a stalled regulation stream must time out and fall back rather
      than hang indefinitely (TestRegulationOutputSafety)
-  M6 [MEDIUM]: PHASE_03_AFFECT_CONTROL=True alone (PHASE_02_MEMORY_TRUTH=
+  M6 [MEDIUM]: AFFECT_CONTROL_ENABLED=True alone (MEMORY_TRUTH_ENABLED=
      False) must run candidate selection and regulation
      (TestPhase03IndependentOfPhase02)
   M7 [MEDIUM]: out-of-range and non-finite duck-typed dict control values
@@ -476,7 +476,7 @@ class TestDistressRegulationCandidateGeneration:
     def test_distress_generates_regulation_candidates_when_flag_on(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         candidates = decision_service._build_candidates(
             "COMFORT", [], "I can't take this anymore", _DISTRESS_STATE_SNAPSHOT
@@ -494,7 +494,7 @@ class TestDistressRegulationCandidateGeneration:
     def test_no_distress_does_not_generate_regulation_candidates(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         candidates = decision_service._build_candidates(
             "ENGAGE", [], "How was your day?", dict(_STATE_SNAPSHOT)
@@ -509,7 +509,7 @@ class TestDistressRegulationCandidateGeneration:
     ):
         """Low mood at rest (negative valence, ordinary/low arousal) is
         sadness, not the acute distress regulation candidates target."""
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
         low_mood_calm = dict(_STATE_SNAPSHOT, mood=-0.9, energy=0.2)
 
         candidates = decision_service._build_candidates(
@@ -525,7 +525,7 @@ class TestDistressRegulationCandidateGeneration:
     ):
         """High arousal with positive/neutral valence (excitement) is not
         distress."""
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
         excited = dict(_STATE_SNAPSHOT, mood=0.6, energy=0.9)
 
         candidates = decision_service._build_candidates(
@@ -539,7 +539,7 @@ class TestDistressRegulationCandidateGeneration:
     def test_distress_does_not_generate_regulation_candidates_when_flag_off(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", False)
 
         candidates = decision_service._build_candidates(
             "COMFORT", [], "I can't take this anymore", _DISTRESS_STATE_SNAPSHOT
@@ -555,7 +555,7 @@ class TestDistressRegulationCandidateGeneration:
         """Every generated candidate must carry something for
         filter_constraints to evaluate (Codex review B3's original
         complaint about ASK, extended to the new regulation kinds)."""
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         candidates = decision_service._build_candidates(
             "COMFORT", [], "I can't take this anymore", _DISTRESS_STATE_SNAPSHOT
@@ -577,8 +577,8 @@ class TestDistressSelectionEndToEnd:
     async def test_decide_selects_a_regulation_action_under_distress(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", True)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         plan = await decision_service.decide(
             _make_chat_event("I can't take this anymore, everything is falling apart"),
@@ -595,8 +595,8 @@ class TestDistressSelectionEndToEnd:
     async def test_decide_does_not_select_regulation_without_distress(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", True)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         plan = await decision_service.decide(
             _make_chat_event("How was your weekend?"),
@@ -612,7 +612,7 @@ class TestDistressSelectionEndToEnd:
 
 
 # --------------------------------------------------------------------------
-# Fix round: M6 [MEDIUM] -- PHASE_03_AFFECT_CONTROL alone (PHASE_02_
+# Fix round: M6 [MEDIUM] -- AFFECT_CONTROL_ENABLED alone (PHASE_02_
 # MEMORY_TRUTH off) must run candidate selection and regulation, not be
 # operationally inert
 # --------------------------------------------------------------------------
@@ -623,8 +623,8 @@ class TestPhase03IndependentOfPhase02:
     async def test_phase03_alone_selects_regulation_under_distress(
         self, decision_service, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         plan = await decision_service.decide(
             _make_chat_event("I can't take this anymore, everything is falling apart"),
@@ -644,8 +644,8 @@ class TestPhase03IndependentOfPhase02:
         """Not just the distress path: enabling PHASE_03 alone must run the
         whole candidate-selection machinery (SPEAK/WAIT scoring), matching
         what PHASE_02 alone already did before this fix."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         plan = await decision_service.decide(
             _make_chat_event("How was your weekend?"), dict(_STATE_SNAPSHOT)
@@ -662,8 +662,8 @@ class TestPhase03IndependentOfPhase02:
         """PHASE_02 off means no memory_activations were ever computed
         upstream (blackboard defaults to []) -- candidate selection must
         run against that empty list rather than crash or skip."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         plan = await decision_service.decide(
             _make_chat_event("How was your weekend?"), dict(_STATE_SNAPSHOT)
@@ -678,8 +678,8 @@ class TestPhase03IndependentOfPhase02:
     ):
         """Backward compatibility: this fix must not turn candidate
         selection on for a caller that enables neither flag."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", False)
 
         plan = await decision_service.decide(
             _make_chat_event("hello there"), dict(_STATE_SNAPSHOT)
@@ -1018,8 +1018,8 @@ class TestArchitectureInvariants:
         """Even under acute distress with maximal global controls, a turn
         whose content contests an identity boundary must not select the
         boundary-violating SPEAK candidate."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", True)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         event = _make_chat_event(
             "Do you have a physical body like a human? I can't take this anymore"
@@ -1048,11 +1048,11 @@ class TestArchitectureInvariants:
     async def test_flag_off_preserves_legacy_scoring_and_candidate_set(
         self, decision_service, monkeypatch
     ):
-        """PHASE_03_AFFECT_CONTROL False must reproduce exact pre-Phase-03
+        """AFFECT_CONTROL_ENABLED False must reproduce exact pre-Phase-03
         behavior: no regulation candidates, no global-control modulation,
         even under acute distress and maximal global controls."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", True)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", True)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", False)
 
         plan = await decision_service.decide(
             _make_chat_event("I can't take this anymore"),
@@ -1076,12 +1076,12 @@ class TestArchitectureInvariants:
     @pytest.mark.asyncio
     async def test_flag_off_pipeline_never_passes_global_controls(self, monkeypatch):
         """Symmetric to the existing memory_activations backward-
-        compatibility test: with PHASE_03_AFFECT_CONTROL off, decide() must
+        compatibility test: with AFFECT_CONTROL_ENABLED off, decide() must
         be called without a global_controls kwarg at all, not merely with
         one that happens to be None -- proves pipeline.py's gate, not just
         decision.py's."""
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", False)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", False)
 
         received_kwargs = {}
 
@@ -1149,8 +1149,8 @@ class TestArchitectureInvariants:
     async def test_flag_on_pipeline_threads_global_controls_from_state(
         self, monkeypatch
     ):
-        monkeypatch.setattr(Config, "PHASE_02_MEMORY_TRUTH", False)
-        monkeypatch.setattr(Config, "PHASE_03_AFFECT_CONTROL", True)
+        monkeypatch.setattr(Config, "MEMORY_TRUTH_ENABLED", False)
+        monkeypatch.setattr(Config, "AFFECT_CONTROL_ENABLED", True)
 
         received_kwargs = {}
 

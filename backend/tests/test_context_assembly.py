@@ -468,7 +468,7 @@ class TestRetrievedContentIsDelimited:
         is itself a prompt-injection attempt must not read as a bare,
         unbounded instruction in the assembled prompt.
 
-        Phase 07: PHASE_02_MEMORY_TRUTH now defaults True, so
+        Phase 07: MEMORY_TRUTH_ENABLED now defaults True, so
         `_build_shared_history` renders every memory through the active
         `AntiInjectionGate` -- a detected attempt is quarantined to
         `[UNTRUSTED_CONTENT_FILTERED]` rather than passed through verbatim,

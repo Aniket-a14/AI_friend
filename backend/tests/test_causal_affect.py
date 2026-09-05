@@ -243,7 +243,7 @@ def test_phase03_owned_files_are_ascii_only():
         repository_root / "backend/app/state/agent_state.py",
         repository_root / "backend/tests/test_causal_affect.py",
     ]
-    orchestration_file = repository_root / "orchestration/PHASE_03/CODEX_RESULT.md"
+    orchestration_file = repository_root / "orchestration/archive/phase_03/CODEX_RESULT.md"
     if orchestration_file.exists():
         owned_files.append(orchestration_file)
 
