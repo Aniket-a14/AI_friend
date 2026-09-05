@@ -12,21 +12,20 @@ export interface ChangelogItem {
 
 export const CHANGELOG_DATA: ChangelogItem[] = [
   {
-    version: "v8.0.0",
-    date: "Late 2026",
-    title: "WebGPU Neural Execution & Home Automation Signal Mesh",
-    summary: "Roadmap milestone for zero-install client-side WebGPU inference, multi-modal vision spatial awareness, and Home Assistant smart-space plugins.",
+    version: "Unscheduled",
+    date: "No committed date",
+    title: "Roadmap: Not Yet Built",
+    summary: "Items genuinely not built yet, with no target version or date committed -- see /roadmap for the full, itemized status of each (including why it isn't shipped).",
     status: "Coming Soon",
     tags: ["Core", "Voice", "Infrastructure", "UI"],
     highlights: [
-      "Zero-install in-browser WebGPU execution running quantized 1B models and ONNX neural voice directly in WebAssembly.",
-      "Live 3D Neo4j memory topology & learned mental lexicon graph explorer in WebGL.",
-      "Home Assistant integration agent: bi-directional room presence and physical environmental grounding.",
-      "Peer-to-peer friend syncing across encrypted local network channels.",
+      "WebGPU in-browser inference: quantized small-LLM and ONNX voice synthesis entirely client-side. Exploratory -- nothing built or benchmarked yet.",
+      "1-click hosted Colab training runners for voice fine-tuning and benchmark sweeps, beyond the existing manual notebooks. Not started.",
+      "Community persona registry for publishing and browsing authored persona presets. Not started -- raises real moderation/consent/hosting questions not yet worked through.",
+      "Real GPT-SoVITS-rendered audio clips for the Voice Showcase, replacing the current static parameter table. In progress.",
     ],
     metrics: [
-      { label: "Target Client RAM", value: "< 2.0 GB WebGPU" },
-      { label: "Installation", value: "Zero Install (Browser)" },
+      { label: "Target Client RAM (WebGPU)", value: "< 2.0 GB (unverified target)" },
     ],
   },
   {

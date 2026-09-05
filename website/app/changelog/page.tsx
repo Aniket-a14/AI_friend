@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useMemo } from "react"
+import Link from "next/link"
 import { MobileNav } from "@/components/mobile-nav"
 import { SiteFooter } from "@/components/site-footer"
 import { CHANGELOG_DATA } from "@/lib/changelog-data"
@@ -130,6 +131,12 @@ export default function ChangelogPage() {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {release.status === "Coming Soon" && (
+                  <Link href="/roadmap" className="inline-block text-xs font-medium text-black underline underline-offset-4">
+                    Full itemized status on the Roadmap page →
+                  </Link>
                 )}
               </article>
             )
