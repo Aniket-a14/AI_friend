@@ -1,0 +1,33 @@
+{
+  "BM-GPU-P2-01": {
+    "benchmark_id": "BM-GPU-P2-01",
+    "title": "End-to-End Turn Latency with Memory Truth",
+    "prompts_evaluated": 15,
+    "baseline_mean_ttft_ms": 19.04,
+    "candidate_mean_ttft_ms": 24.51,
+    "mean_ttft_delta_ms": 5.47,
+    "p50_ttft_delta_ms": 4.62,
+    "p95_ttft_delta_ms": 14.28,
+    "p99_ttft_delta_ms": 14.28,
+    "target_mean_delta_ms": "<= 10.0",
+    "target_p95_delta_ms": "<= 20.0",
+    "baseline_mean_total_ms": 351.09,
+    "candidate_mean_total_ms": 411.19,
+    "verdict": "PASS"
+  },
+  "BM-GPU-P2-02": {
+    "benchmark_id": "BM-GPU-P2-02",
+    "title": "Multi-Turn Memory Truth Live Soak Test",
+    "turns_executed": 20,
+    "fact_checks_passed": 20,
+    "total_fact_checks": 20,
+    "fact_accuracy_pct": 100.0,
+    "target_fact_accuracy_pct": "100.0%",
+    "cas_conflicts": 0,
+    "initial_rss_kb": 136656.0,
+    "final_rss_kb": 136816.0,
+    "rss_variance_pct": 0.12,
+    "target_rss_variance_pct": "<= 5.0%",
+    "verdict": "PASS"
+  }
+}

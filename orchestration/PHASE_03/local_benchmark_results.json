@@ -1,0 +1,44 @@
+{
+  "BM-LOC-P3-01": {
+    "benchmark_id": "BM-LOC-P3-01",
+    "title": "Event Appraisal Throughput",
+    "iterations": 10000,
+    "mean_us": 2.544,
+    "p50_us": 2.5,
+    "p95_us": 2.625,
+    "p99_us": 3.291,
+    "min_us": 2.375,
+    "max_us": 27.5,
+    "target_p50_us": "<= 10.0",
+    "target_p95_us": "<= 20.0",
+    "verdict": "PASS"
+  },
+  "BM-LOC-P3-02": {
+    "benchmark_id": "BM-LOC-P3-02",
+    "title": "Global Controls Derivation Latency",
+    "iterations": 10000,
+    "mean_us": 1.325,
+    "p50_us": 1.292,
+    "p95_us": 1.375,
+    "p99_us": 1.667,
+    "min_us": 1.167,
+    "max_us": 9.5,
+    "target_p50_us": "<= 5.0",
+    "target_p95_us": "<= 10.0",
+    "verdict": "PASS"
+  },
+  "BM-LOC-P3-03": {
+    "benchmark_id": "BM-LOC-P3-03",
+    "title": "Modulated Candidate Selection Latency",
+    "iterations": 10000,
+    "candidates_per_iter": 10,
+    "mean_us": 12.772,
+    "p50_us": 12.5,
+    "p95_us": 13.416,
+    "p99_us": 18.5,
+    "min_us": 11.583,
+    "max_us": 115.542,
+    "target_p95_us": "<= 50.0",
+    "verdict": "PASS"
+  }
+}
