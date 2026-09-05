@@ -508,11 +508,15 @@ def test_simulated_records_cannot_reach_production_memory_or_state():
 def test_phase_six_files_are_strictly_seven_bit_ascii():
     """Unicode in contracts, tests, or result docs can break constrained tooling."""
     repo_root = Path(__file__).resolve().parents[2]
+    codex_result = repo_root / "orchestration/PHASE_06/CODEX_RESULT.md"
+    if not codex_result.exists():
+        codex_result = repo_root / "orchestration/archive/phase_06/CODEX_RESULT.md"
     paths = [
         repo_root / "backend/app/cognitive/planning.py",
         repo_root / "backend/app/cognitive/simulation.py",
         repo_root / "backend/tests/test_planning_simulation.py",
-        repo_root / "orchestration/archive/phase_06/CODEX_RESULT.md",
     ]
+    if codex_result.exists():
+        paths.append(codex_result)
     for path in paths:
         assert all(byte < 128 for byte in path.read_bytes()), path

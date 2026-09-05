@@ -61,10 +61,9 @@ _RELATIONAL_STANCES: tuple[str, ...] = ("distant", "guarded", "neutral", "warm",
 # reflex, rather than reintroducing a second threshold with different logic.
 _REFLEX_URGENCY_THRESHOLD = 0.75
 
-# Phase 02 Package B: a MemoryActivation at or above this relevance, whose
+# Memory activation disputation threshold: a MemoryActivation at or above this relevance, whose
 # contradiction_state is not "NONE", is treated as active memory disputing
-# what the turn is about to assert -- reason enough to propose ASK (clarify)
-# as a candidate rather than only SPEAK.
+# what the turn is about to assert -- proposing ASK (clarify) as a candidate.
 _HIGH_RELEVANCE_THRESHOLD = 0.75
 
 # Baseline scores for the two candidates decide() always generates. WAIT is
@@ -79,10 +78,9 @@ _WAIT_FALLBACK_SCORE = 0.1
 _ASK_BASE_SCORE = 0.6
 _ASK_RELEVANCE_BONUS = 0.3
 
-# Phase 03 Package B: acute distress thresholds for emotion-regulation
-# candidate generation (Architecture Sections 9, 10, 21, 38). Both must hold
-# together -- a strongly negative mood alone is ordinary low mood, not the
-# acute, aroused distress regulation candidates exist to interrupt.
+# Acute distress thresholds for emotion-regulation candidate generation.
+# Both must hold together -- a strongly negative mood alone is ordinary low mood,
+# not the acute, aroused distress regulation candidates exist to address.
 _DISTRESS_VALENCE_THRESHOLD = -0.5
 _DISTRESS_AROUSAL_THRESHOLD = 0.4
 
@@ -267,8 +265,7 @@ class DecisionService:
         # `_score_goals_maut` updates a utility.
         self.agent_name = agent_name
         self._weights_store = weights_store or AdaptiveWeightsStore()
-        # Phase 02 Package B: constraint-first candidate filtering/scoring,
-        # used when memory truth or affect control is enabled.
+        # Constraint-first candidate filtering and scoring selector
         self._candidate_selector = CandidateSelector()
 
         # Intent Persistence (Section 3.2)
@@ -1006,25 +1003,22 @@ class DecisionService:
         metacognitive_directive: str = "PROCEED",
         privacy_filter: Callable[[ActionCandidate], bool] | None = None,
     ) -> BehaviorDecision:
-        """Phase 02 Package B: constraint-first candidate generation and
-        selection for one social-response turn. Returns a copy of
+        """Constraint-first candidate generation and selection for one
+        social-response turn. Returns a copy of
         `behavior_decision` carrying the winning candidate, the rejected
         alternatives (constraint-violating and lower-scoring alike), and
         whether any considered memory activation reported a retrieval
         outage.
 
-        Phase 03 Package B: `state_snapshot` feeds acute-distress detection
-        in `_build_candidates`; `global_controls` is forwarded to
-        `score_and_select` only when `Config.AFFECT_CONTROL_ENABLED` is
-        True, so global-control modulation can never affect ranking while
-        the flag is off, matching this repo's existing MEMORY_TRUTH_ENABLED
-        gating pattern. Both are optional and additive -- omitting them
-        reproduces exact prior behavior.
+        `state_snapshot` feeds acute-distress detection in `_build_candidates`;
+        `global_controls` is forwarded to `score_and_select` only when
+        `Config.AFFECT_CONTROL_ENABLED` is True, so global-control modulation
+        can never affect ranking while the flag is off, matching this file's
+        `MEMORY_TRUTH_ENABLED` gating pattern above. Both are optional and
+        additive -- omitting them reproduces exact prior behavior.
 
-        `metacognitive_directive` and `privacy_filter` (Phase 04 Package B)
-        pass straight through to `score_and_select`, unconditionally --
-        their own defaults ("PROCEED", None) are what make them no-ops for
-        every caller that does not set them.
+        `metacognitive_directive` and `privacy_filter` pass straight through to
+        `score_and_select` unconditionally with safe default fallbacks ("PROCEED", None).
         """
         forbidden_claims = list(self._immutable_core().get("boundaries", []))
         candidates = self._build_candidates(

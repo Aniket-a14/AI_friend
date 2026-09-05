@@ -69,17 +69,10 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
-# Bucket 7 (voice remediation Phase 3): corruption witnessed independently on
-# two live deployments (.agents/CONTEXT.md) -- the reflection model writing
-# CJK fragments into a persona authored entirely in English, and writing the
-# literal name of a language ("Hinglish") into speaking_style as if naming a
-# language were the same as describing how someone talks. Neither is a type
-# error (both are valid strings), so Pydantic's field validation never catches
-# either -- this is a content-level backstop for the one place adaptive
-# persona content is actually written (`learn_traits`, `evolve_persona`'s
-# speaking_style branch), not a language-identification model. It exists to
-# catch a weak reflection model degenerating into these two specific observed
-# failure shapes, not to validate or support arbitrary multilingual personas.
+# Content-level backstop for adaptive persona updates: prevents degradation
+# from reflection models (e.g. writing CJK fragments or literal language names
+# into speaking_style). Pydantic type validation alone allows arbitrary strings,
+# so this validates adaptive persona content written by learn_traits and evolve_persona.
 _META_PLACEHOLDER_VALUES = frozenset(
     {
         "n/a",
@@ -198,24 +191,14 @@ class PersonaProfile(BaseModel):
     # conversation that caused it and colours a session it has nothing to do
     # with.
     dopamine_halflife_s: float = _constitutional(default=90.0, ge=5.0, le=1800.0)
-    # Bucket 11 (voice remediation Phase 3): 600s (10 minutes) was 6-9x
-    # faster than measured human cortisol plasma half-life (~66-90 minutes),
-    # so a fright stopped colouring behaviour within about 20 minutes --
-    # unrealistically fast for how a real fright lingers. Raised to 4500s
-    # (75 minutes, the midpoint of that human range). Still CONSTITUTIONAL --
-    # a deployment or an authored persona is free to dial this differently,
-    # e.g. Abhipsa's authored persona.toml sets 1000s from her own described
-    # temperament -- this only changes what an unauthored deployment starts
-    # at. The 7200s ceiling already permitted this; only the default moved.
+    # Cortisol plasma half-life default is 4500s (~75 minutes, within empirical
+    # human plasma half-life of 66-90 minutes). Still CONSTITUTIONAL --
+    # an authored persona may configure this differently based on temperament.
     cortisol_halflife_s: float = _constitutional(default=4500.0, ge=5.0, le=7200.0)
-    # Bucket 11 (voice remediation Phase 3, item 2): adrenaline has no tonic
-    # term (see AgentState.adrenaline_tonic) -- it is purely reactive, firing
-    # on startle/interruption/shock rather than tracking mood continuously --
-    # so its half-life alone decides how long that reaction lingers. 120s
-    # (2 minutes) sits between dopamine's 90s and cortisol's 4500s, matching
-    # the plan's "1-3 min timescale" for this channel; bounds mirror
-    # dopamine's since both are short-timescale reactive bursts, not the
-    # hours-scale mood cortisol's ceiling has to accommodate.
+    # Adrenaline has no tonic term (see AgentState.adrenaline_tonic) -- it is purely
+    # reactive, firing on startle/interruption/shock rather than tracking ambient mood.
+    # 120s (2 minutes) sits between dopamine's 90s and cortisol's 4500s, reflecting
+    # short-timescale reactive burst recovery.
     adrenaline_halflife_s: float = _constitutional(default=120.0, ge=5.0, le=1800.0)
 
     # -- constitutional: narrative character --------------------------------

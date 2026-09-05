@@ -109,12 +109,10 @@ class VisionAgent(BaseAgent):
             except Exception as e:
                 logger.warning("[Vision] Failed to load face cascade: %s", e)
 
-        # Bucket 13 (voice remediation Phase 3): the CPU-only facial reflex
-        # channel. `mediapipe` is an optional dependency (requirements-ai.txt),
-        # and the model asset is a ~3.7MB download not shipped in the repo
-        # (models/ is gitignored, same convention as Whisper's weights) -- so
-        # this degrades to "disabled, logged" rather than failing agent
-        # startup, matching every other optional-capture path in this file.
+        # CPU-only facial reflex channel. `mediapipe` is an optional dependency,
+        # and the model asset is a ~3.7MB download not shipped in the repo --
+        # so this degrades gracefully to "disabled, logged" rather than failing
+        # agent startup, matching other optional-capture paths in this file.
         self._facial_reflex_tracker = FacialReflexTracker()
         self._face_landmarker = None
         facial_reflex_enabled = getattr(Config, "FACIAL_REFLEX_ENABLED", True)
@@ -313,12 +311,10 @@ class VisionAgent(BaseAgent):
                     if self.vlm_enabled and self.appraisal:
                         await self._run_appraisal(frame_b64)
 
-                    # 4b. Facial reflex (Bucket 13) -- deliberately NOT gated
-                    # by VISION_SUSPEND_DURING_TURN or the VLM's interval;
-                    # continuous, mid-turn sampling is the entire point (see
-                    # reflex.py's docstring). Camera-only: a screen capture
-                    # has no face to score, so this is skipped rather than
-                    # spending CPU on a detection that can never fire.
+                    # 4b. Facial reflex: deliberately not gated by
+                    # VISION_SUSPEND_DURING_TURN or the VLM interval; continuous
+                    # mid-turn sampling is preserved. Camera-only: screen captures
+                    # have no face to score, so they are skipped.
                     if self._face_landmarker is not None and self.source == "camera":
                         await self._run_facial_reflex(frame_b64)
 

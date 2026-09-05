@@ -33,7 +33,7 @@ export default function ShowcasePage() {
             Friendship Dynamics & Companion Showcase
           </h1>
           <p className="text-base text-black/50 leading-relaxed">
-            AI Friend is an authentic, lifelong companion — not a robotic voice assistant or sycophantic chatbot. Explore how real relationship friction, biological mood drift, and episodic memory create a genuine friend of your own making.
+            AI Friend is an authentic, lifelong companion — not a robotic voice assistant or sycophantic chatbot. Explore how real relationship friction, dynamical mood drift, and episodic memory create a genuine friend of your own making.
           </p>
         </div>
 
@@ -44,7 +44,7 @@ export default function ShowcasePage() {
               <span className="text-[10px] font-mono uppercase tracking-widest text-black/40">Real Companion Dynamics</span>
               <h2 className="text-2xl font-light text-[#111] mt-1">Curated Relationship Presets</h2>
               <p className="text-xs text-black/50 mt-1">
-                Select a companion archetype to inspect their authentic friction behavior, biological temperament, and cloned voice profile.
+                Select a companion archetype to inspect their authentic friction behavior, constitutional temperament, and cloned voice profile.
               </p>
             </div>
 
@@ -214,7 +214,7 @@ export default function ShowcasePage() {
           <ComingSoonOverlay
             title="COMING SOON"
             description="The public persona sharing registry and 1-click import system is launching alongside the community hub."
-            eta="Roadmap v7.2"
+            eta="Roadmap Preview"
             blurAmount="md"
           >
             <div className="rounded-2xl border border-black/[0.08] bg-white p-8 grid grid-cols-1 md:grid-cols-2 gap-6">

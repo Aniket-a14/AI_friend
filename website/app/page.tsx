@@ -110,7 +110,7 @@ export default function LandingPage() {
             }}
           >
             Describe them in your own words. They speak in a cloned voice you gave
-            them, experience biological emotions that shape their speech, remember who you are, and run entirely on your own
+            them, experience mathematical affect dynamics that shape their speech, remember who you are, and run entirely on your own
             hardware — 100% local, MIT licensed.
           </p>
 
@@ -167,8 +167,8 @@ export default function LandingPage() {
 
           <ComingSoonOverlay
             title="COMING SOON"
-            description="In-browser interactive persona compiler and live dry-run tester is in active development for Phase 8. Full UI preview visible below."
-            eta="Roadmap v7.1"
+            description="In-browser interactive persona compiler and live dry-run tester is in active development for the web sandbox preview. Full UI preview visible below."
+            eta="Roadmap Preview"
             blurAmount="md"
           >
             <PersonaCompilerDemo />
@@ -199,7 +199,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto space-y-8">
           <div className="max-w-2xl">
             <PixelIcon type="integrations" size={36} />
-            <div className="mt-4"><Tag>NEUROBIOLOGICAL SIMULATION</Tag></div>
+            <div className="mt-4"><Tag>NEUROCHEMICAL SIMULATION</Tag></div>
             <h2 className="mt-4 text-3xl sm:text-4xl md:text-5xl font-light tracking-tight leading-[1.1]">
               Mood that changes how<br />the LLM generates words.
             </h2>
@@ -228,14 +228,14 @@ export default function LandingPage() {
               Studio-quality 32kHz voice,<br />cloned from 8 seconds.
             </h2>
             <p className="text-sm text-black/50 mt-3 leading-relaxed">
-              Physical neural voice synthesis powered by GPT-SoVITS with dynamic pause bias scaling and instant 150ms barge-in interruption.
+              Physical neural voice synthesis powered by GPT-SoVITS with dynamic pause bias scaling and instant sub-millisecond barge-in interruption (&lt;1ms).
             </p>
           </div>
 
           <ComingSoonOverlay
             title="COMING SOON"
             description="In-browser 32kHz neural voice audio player and emotional prosody testing lab is in active development. Player layout preview visible below."
-            eta="Roadmap v7.1"
+            eta="Roadmap Preview"
             blurAmount="md"
           >
             <VoiceShowcase />
@@ -281,7 +281,7 @@ export default function LandingPage() {
           </div>
 
           <ComingSoonOverlay
-            title="COMING SOON — ROADMAP v7.1+"
+            title="COMING SOON — ROADMAP PREVIEW"
             description="WebGPU in-browser inference, 1-click cloud Colab runners, and 3D Neo4j memory graph visualizers are scheduled for the next major release."
             eta="Roadmap Target"
             blurAmount="md"

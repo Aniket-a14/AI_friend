@@ -18,7 +18,7 @@ ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 
 ## Endocrine Parameter Translation
 
-Unlike simple LLM wrappers, the `AnthropicClient` adapter (`backend/app/llm/anthropic_client.py`) translates internal biological endocrine states into cloud API sampling parameters:
+Unlike simple LLM wrappers, the `AnthropicClient` adapter (`backend/app/llm/anthropic_client.py`) translates internal affective endocrine states into cloud API sampling parameters:
 
 * `temperature` is modulated by Cortisol ($0.3 \leftrightarrow 0.9$).
 * `top_p` is modulated by Dopamine ($0.6 \leftrightarrow 0.98$).

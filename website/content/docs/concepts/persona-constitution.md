@@ -27,7 +27,7 @@ Any authored persona attempting to override an immutable key is rejected at star
 ---
 
 ### Tier 1: Constitutional Temperament (Fixed at Creation)
-Fixed biological and emotional parameters inferred from your natural language description during onboarding:
+Fixed constitutional and affective parameters inferred from your natural language description during onboarding:
 * **Baseline Affect**: Default resting points in 3D PAD space (Pleasure, Arousal, Dominance).
 * **Neurochemical Sensitivities**: Cortisol and Dopamine reactivity rates and half-lives.
 * **Linguistic Style**: Speaking rhythm, humor index, and vocabulary density.

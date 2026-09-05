@@ -28,9 +28,9 @@ export const COMPARISON_DATA: ComparisonRow[] = [
     category: "Psychology",
   },
   {
-    dimension: "Endocrine & Biology Model",
+    dimension: "Endocrine & Affective Model",
     aiFriend: "Tonic + Phasic Cortisol & Dopamine. Directly modulates LLM temperature, top-p, and response pacing.",
-    characterAi: "None. Stateless prompt prefixes without biological dynamics.",
+    characterAi: "None. Stateless prompt prefixes without dynamical affect modeling.",
     openAiRealtime: "None. Static prompt instructions.",
     humeEvi: "Expression Vectors. Visual/acoustic sentiment scores without internal hormone state.",
     elevenLabsAgents: "None. Rule-based tone presets.",

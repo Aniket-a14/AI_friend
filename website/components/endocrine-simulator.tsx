@@ -22,13 +22,13 @@ export function EndocrineSimulator() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-black/[0.06]">
         <div>
           <span className="text-[10px] font-mono uppercase tracking-widest text-black/40 bg-black/[0.04] px-2.5 py-1 rounded-full">
-            Biology & Sampling Physics
+            Affective Modulation & Sampling Physics
           </span>
           <h3 className="text-2xl font-light tracking-tight mt-2 text-[#111]">
             Endocrine Parameter Modulator
           </h3>
           <p className="text-xs text-black/45 mt-1">
-            Adjust simulated neurochemicals to see how internal biological states dynamically reshape LLM generation.
+            Adjust simulated neurochemicals to see how internal affective states dynamically reshape LLM generation.
           </p>
         </div>
 
@@ -174,7 +174,7 @@ export function EndocrineSimulator() {
           </div>
 
           <div className="text-[11px] text-black/50 bg-white p-3 rounded-lg border border-black/[0.05] leading-relaxed">
-            <strong>Biological Independence:</strong> Phasic bursts decay according to true biological half-lives, allowing the agent to be stressed by an urgent task while enthusiastic about solving it.
+            <strong>Affective Independence:</strong> Phasic bursts decay according to calibrated half-lives, allowing the agent to be stressed by an urgent task while enthusiastic about solving it.
           </div>
         </div>
       </div>
