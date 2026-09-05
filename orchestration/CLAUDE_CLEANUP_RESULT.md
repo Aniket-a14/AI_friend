@@ -180,6 +180,8 @@ expected of archived historical documents and were left alone.)
 
 ## 9. Final Commit SHA
 
-See the commit immediately following this file in `claude/repo-cleanup`'s
-history (this file is written before that commit is made, so it cannot
-self-reference its own SHA).
+`30fca5c` on branch `claude/repo-cleanup` — "docs: repository cleanup pass
+(docs, comments, website content)". This branch was created off `main`
+(which was left untouched, still at `7a7626f`) carrying Gemini's prior
+uncommitted diff, and this commit is the only commit made during this
+round. Not merged, not pushed, per the stop condition below.
